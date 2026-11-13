@@ -12,6 +12,7 @@ import { patchLogHook } from "@lib/api/debug";
 import { injectFluxInterceptor } from "@lib/api/flux";
 import { patchJsx } from "@lib/api/react/jsx";
 import { warmAddonFinds } from "@lib/api/warmFinds";
+import { startHeartbeat } from "@lib/api/diag";
 import { logger } from "@lib/utils/logger";
 import { patchSettings } from "@ui/settings";
 import { initDebugger } from "@lib/api/debug";
@@ -19,6 +20,12 @@ import { initDebugger } from "@lib/api/debug";
 import * as lib from "./lib";
 
 export default async () => {
+    // ROUND 11 (diagnostic): JS-alive probe from boot — HEARTBEAT
+    // every 10 s. If the lines keep coming after the user opens
+    // Plugins, the JS thread is alive; if they stop at the tap, the
+    // thread died or blocked during the push/render.
+    startHeartbeat();
+
     // Load everything in parallel
 
     await Promise.all([

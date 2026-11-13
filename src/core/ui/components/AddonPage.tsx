@@ -1,5 +1,6 @@
 import { CardWrapper } from "@core/ui/components/AddonCard";
 import { findAssetId } from "@lib/api/assets";
+import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { settings } from "@lib/api/settings";
 import { dismissAlert, openAlert } from "@lib/ui/alerts";
 import { showSheet } from "@lib/ui/sheets";
@@ -138,6 +139,8 @@ function SafeModeNotice({ message, footer }: { message?: string; footer?: ReactN
 }
 
 export default function AddonPage<T extends object>({ CardComponent, ...props }: AddonPageProps<T>) {
+    // ROUND 11 (diagnostic): render-start marker, flushed immediately.
+    try { diagLog("ADDONPAGE RENDER START"); diagFlushNow(); } catch { /* ignore */ }
     const [search, setSearch] = React.useState("");
     const [sortFn, setSortFn] = React.useState<((a: T, b: T) => number) | null>(() => null);
     const { bottom: bottomInset } = useSafeAreaInsets();
@@ -164,6 +167,9 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
 
         return fuzzysort.go(search, items, { keys: props.searchKeywords, all: true });
     }, [props.items, sortFn, search]);
+
+    // ROUND 11 (diagnostic): did the item list compute?
+    try { diagLog(`ADDONPAGE RESULTS n=${results.length}`); diagFlushNow(); } catch { /* ignore */ }
 
     const onInstallPress = useCallback(() => {
         if (!props.installAction) return () => { };

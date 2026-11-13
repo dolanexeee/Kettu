@@ -101,7 +101,8 @@ export async function warmAddonFinds() {
     diagLog(`WARM START filters=${filters.length}`);
     try {
         const result = await warmFiltersAsync(filters, 100);
-        diagLog(`WARM DONE warmed=${result.warmed}/${result.filters} notFound=${result.notFound} scanned=${result.scanned} ms=${result.ms}`);
+        // ROUND 11: log the notFound filter uniqs, not just the count.
+        diagLog(`WARM DONE warmed=${result.warmed}/${result.filters} notFound=${result.notFound} scanned=${result.scanned} ms=${result.ms} missing=[${result.missing.join(",")}]`);
     } catch (e) {
         diagLog(`WARM ERROR ${e}`);
     }

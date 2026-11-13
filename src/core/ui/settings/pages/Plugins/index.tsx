@@ -6,7 +6,7 @@ import { useProxy } from "@core/vendetta/storage";
 import { isCorePlugin, isPluginInstalled, pluginSettings, registeredPlugins, corePluginInstances } from "@lib/addons/plugins";
 import { Author } from "@lib/addons/types";
 import { findAssetId } from "@lib/api/assets";
-import { diagLog } from "@lib/api/diag";
+import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { settings } from "@lib/api/settings";
 import { useObservable } from "@lib/api/storage";
 import { showToast } from "@lib/ui/toasts";
@@ -67,6 +67,10 @@ function PluginPage(props: PluginPageProps) {
 }
 
 export default function Plugins() {
+  // ROUND 11 (diagnostic): render-start marker, flushed immediately.
+  // If this line is absent while CUSTOMPAGE RENDER is present, the
+  // screen mounted but Plugins never rendered.
+  try { diagLog("PLUGINS RENDER START"); diagFlushNow(); } catch { /* ignore */ }
   useProxy(settings);
   const navigation = NavigationNative.useNavigation();
 

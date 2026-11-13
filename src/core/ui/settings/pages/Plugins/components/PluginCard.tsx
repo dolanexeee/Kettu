@@ -2,6 +2,7 @@ import { CardWrapper } from "@core/ui/components/AddonCard";
 import { UnifiedPluginModel } from "@core/ui/settings/pages/Plugins/models";
 import { usePluginCardStyles } from "@core/ui/settings/pages/Plugins/usePluginCardStyles";
 import { findAssetId } from "@lib/api/assets";
+import { diagLog } from "@lib/api/diag";
 import { NavigationNative, tokens } from "@metro/common";
 import {
   Card,
@@ -145,6 +146,8 @@ export default function PluginCard({
   result,
   item: plugin,
 }: CardWrapper<UnifiedPluginModel>) {
+  // ROUND 11 (diagnostic): per-row render marker.
+  try { diagLog(`PLUGINCARD RENDER id=${plugin.id}`); } catch { /* ignore */ }
   plugin.usePluginState();
 
   

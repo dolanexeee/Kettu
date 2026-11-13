@@ -39,6 +39,10 @@ export interface WarmResult {
     notFound: number;
     scanned: number;
     ms: number;
+    // ROUND 11: the uniqs of the filters that never matched, so the
+    // on-device log names the 3 notFound filters instead of just
+    // counting them (the diag previously recorded only the count).
+    missing: string[];
 }
 
 /**
@@ -62,7 +66,8 @@ export function warmFiltersAsync(filters: FilterFn<any>[], sliceMs = 100): Promi
             for (const [uniq] of pending) {
                 try { cachers.get(uniq)?.finish(true); } catch { /* ignore */ }
             }
-            resolve({ filters: filters.length, warmed: filters.length - pending.size, notFound: pending.size, scanned, ms: Date.now() - started });
+            // ROUND 11: report the uniqs that never matched.
+            resolve({ filters: filters.length, warmed: filters.length - pending.size, notFound: pending.size, scanned, ms: Date.now() - started, missing: [...pending.keys()] });
         };
         const step = () => {
             try {
