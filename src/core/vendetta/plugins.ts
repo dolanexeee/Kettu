@@ -5,6 +5,8 @@ import { safeFetch } from "@lib/utils";
 import { BUNNY_PROXY_PREFIX, VD_PROXY_PREFIX } from "@lib/utils/constants";
 import { logger,LoggerClass } from "@lib/utils/logger";
 
+import { KETTU_MAX_SEED_VERSION, seedMaxPlugins } from "./max-plugins";
+
 type EvaledPlugin = {
     onLoad?(): void;
     onUnload(): void;
@@ -34,6 +36,13 @@ export interface VendettaPlugin {
 
 const plugins = wrapSync(createStorage<Record<string, VendettaPlugin>>(createMMKVBackend("VENDETTA_PLUGINS")));
 const pluginInstance: Record<string, EvaledPlugin> = {};
+
+// KETTU MAX: one-time seed marker for the baked-in plugins (see max-plugins.ts).
+// Stored separately from the plugin list, so a user-removed MAX plugin is
+// never resurrected by a later boot. NOTE: bumping KETTU_MAX_SEED_VERSION
+// re-seeds plugins that are absent — including ones removed under an older
+// seed version — so only bump it when shipping new baked-in plugin code.
+const maxSeedStore = wrapSync(createStorage<{ seedVersion?: number }>(createMMKVBackend("KETTU_MAX")));
 
 export const VdPluginManager = {
     plugins,
@@ -167,7 +176,16 @@ export const VdPluginManager = {
      * @internal
      */
     async initPlugins() {
-        await awaitStorage(settings, plugins);
+        await awaitStorage(settings, plugins, maxSeedStore);
+
+        // KETTU MAX: seed the baked-in plugins (installed + enabled, no fetch).
+        // Runs once per seed version; a user-removed plugin stays removed
+        // until the seed version is bumped (see the maxSeedStore note above).
+        if (maxSeedStore.seedVersion !== KETTU_MAX_SEED_VERSION) {
+            seedMaxPlugins(plugins);
+            maxSeedStore.seedVersion = KETTU_MAX_SEED_VERSION;
+        }
+
         const allIds = Object.keys(plugins);
 
         if (!settings.safeMode?.enabled) {

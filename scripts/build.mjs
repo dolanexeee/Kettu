@@ -43,7 +43,9 @@ const config = {
         js: "//# sourceURL=kettu"
     },
     loader: {
-        ".png": "dataurl"
+        ".png": "dataurl",
+        // KETTU MAX: built-in plugins are embedded verbatim as text
+        ".txt": "text"
     },
     define: {
         window: "globalThis",
