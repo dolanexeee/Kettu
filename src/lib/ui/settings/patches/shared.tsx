@@ -10,7 +10,24 @@ export const CustomPageRenderer = React.memo(() => {
     const navigation = NavigationNative.useNavigation();
     const route = NavigationNative.useRoute();
 
-    const { render: PageComponent, ...args } = route.params;
+    // ROUND 15 (Discord 353): stabilize the page subtree against
+    // navigation-object churn. On 353 the navigator replaces the
+    // navigation object when the push transition settles (navId 1→3→5
+    // in the logs) and every useNavigation consumer re-renders; the
+    // Plugins page re-rendered ~10x per tap and never committed.
+    // Capture the FIRST navigation/params and build the page element
+    // exactly once (useMemo []), so later context churn cannot
+    // re-render the page subtree at all. The renderer itself may still
+    // re-render (the CUSTOMPAGE RENDER marker above shows it) but its
+    // children will not — the log will prove it: PLUGINS RENDER START
+    // should fire 1x per tap if the stabilization holds.
+    const firstNavRef = React.useRef(navigation);
+    const firstParamsRef = React.useRef(route.params);
+    const firstPageRef = React.useRef(route.params?.render);
+    const firstArgsRef = React.useRef((() => {
+        const { render: _r, ...rest } = route.params ?? {};
+        return rest;
+    })());
 
     // ROUND 11 (diagnostic): log the mount attempt. If renderType is
     // undefined, route.params lost the render fn between navigate and
@@ -18,13 +35,20 @@ export const CustomPageRenderer = React.memo(() => {
     // (black screen, no error, no mount marker). Flushed immediately:
     // if JS dies right after this, the line is already on disk.
     try {
-        diagLog(`CUSTOMPAGE RENDER params=[${Object.keys(route.params ?? {}).join(",")}] renderType=${typeof PageComponent} navId=${idOf(navigation)} paramsId=${idOf(route.params)}`);
+        diagLog(`CUSTOMPAGE RENDER params=[${Object.keys(route.params ?? {}).join(",")}] renderType=${typeof firstPageRef.current} navId=${idOf(navigation)} paramsId=${idOf(route.params)}`);
         diagFlushNow();
     } catch { /* never break rendering for logging */ }
 
-    React.useEffect(() => void navigation.setOptions({ ...args }), []);
+    React.useEffect(() => void firstNavRef.current.setOptions({ ...firstArgsRef.current }), []);
 
-    return <ErrorBoundary label="CustomPage"><PageComponent /></ErrorBoundary>;
+    const element = React.useMemo(() => {
+        const Page = firstPageRef.current;
+        try { diagLog(`CUSTOMPAGE ELEMENT CREATED renderType=${typeof Page}`); diagFlushNow(); } catch { /* ignore */ }
+        if (typeof Page !== "function") return null;
+        return <ErrorBoundary label="CustomPage"><Page /></ErrorBoundary>;
+    }, []);
+
+    return element;
 });
 
 export function wrapOnPress(

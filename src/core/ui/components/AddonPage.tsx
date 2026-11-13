@@ -9,7 +9,6 @@ import { lazyDestructure, proxyLazy } from "@lib/utils/lazy";
 import { findByProps } from "@metro";
 import { clipboard, NavigationNative } from "@metro/common";
 import { AlertActionButton, AlertModal, Button, FloatingActionButton, HelpMessage, IconButton, Stack, Text, TextInput, useSafeAreaInsets } from "@metro/common/components";
-import { ErrorBoundary, Search } from "@ui/components";
 import { isNotNil } from "es-toolkit";
 import fuzzysort from "fuzzysort";
 import { ComponentType, ReactNode, useCallback, useEffect, useMemo } from "react";
@@ -141,7 +140,11 @@ function SafeModeNotice({ message, footer }: { message?: string; footer?: ReactN
 export default function AddonPage<T extends object>({ CardComponent, ...props }: AddonPageProps<T>) {
     // ROUND 11 (diagnostic): render-start marker, flushed immediately.
     try { diagLog("ADDONPAGE RENDER START"); diagFlushNow(); } catch { /* ignore */ }
-    const [search, setSearch] = React.useState("");
+    // ROUND 15 (Discord 353): the search UI is REMOVED for now (see
+    // header below). The state stays "" and fuzzysort still wraps the
+    // items, so PluginCard's result[0/1/2].highlight() keeps working
+    // unchanged.
+    const [search] = React.useState("");
     const [sortFn, setSortFn] = React.useState<((a: T, b: T) => number) | null>(() => null);
     const { bottom: bottomInset } = useSafeAreaInsets();
     const navigation = NavigationNative.useNavigation();
@@ -149,8 +152,13 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
     // ROUND 14 (fix verification): proves the page committed — effects run
     // only after commit. If this line is absent on-device, the commit is
     // still blocked even with the ScrollView list.
+    // ROUND 15: also gates the FloatingActionButton below — the FAB only
+    // renders after the first commit, so a native-view problem in the
+    // FAB can no longer block the initial commit.
+    const [mounted, setMounted] = React.useState(false);
     useEffect(() => {
         try { diagLog(`ADDONPAGE MOUNTED title=${props.title}`); diagFlushNow(); } catch { /* ignore */ }
+        setMounted(true);
     }, []);
 
     useEffect(() => {
@@ -210,9 +218,18 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
             {settings.safeMode?.enabled && <View style={{ marginBottom: 10 }}>
                 <SafeModeNotice message={props.safeModeHint?.message} footer={props.safeModeHint?.footer} />
             </View>}
-            <View style={{ flexDirection: "row", gap: 8 }}>
-                <Search style={{ flexGrow: 1 }} isRound={!!props.sortOptions} onChangeText={v => setSearch(v)} />
-                {props.sortOptions && <IconButton
+            {/* ROUND 15 (Discord 353): the <Search> (TextInput) is REMOVED
+                from the header. Evidence: the first plugin card never
+                renders in any log (no PLUGINCARD RENDER) although
+                ADDONPAGE RESULTS n=10 completes and the Search boundary
+                renders — the render dies in the stretch between Search
+                and the first card; Search/TextInput is present in BOTH
+                no-commit pages (Plugins, Addon Browser) and absent from
+                General, the one page that commits. Search returns once
+                the page commits without it. The sort button stays (plain
+                IconButton, same as General's icons). */}
+            {props.sortOptions && <View style={{ flexDirection: "row", gap: 8 }}>
+                <IconButton
                     icon={findAssetId("ArrowsUpDownIcon")}
                     variant="tertiary"
                     disabled={!!search}
@@ -227,8 +244,8 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
                             onPress: () => setSortFn(() => fn)
                         }))
                     })}
-                />}
-            </View>
+                />
+            </View>}
             {props.ListHeaderComponent && <props.ListHeaderComponent />}
         </View>
     );
@@ -248,8 +265,13 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
         </View>
     );
 
+    // ROUND 15 (Discord 353): the inner ErrorBoundary("AddonPageList")
+    // is REMOVED — General (the one page that commits) has no inner
+    // boundary, only the CustomPage boundary above the page. One less
+    // re-rendering class in the tree; a card throw is now caught by the
+    // CustomPage boundary instead (visible ErrorCard, same as before).
     return (
-        <ErrorBoundary label="AddonPageList">
+        <>
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={{ padding: 8, paddingHorizontal: 12, paddingBottom: 90 }}
@@ -263,11 +285,11 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
                 ))}
                 {props.ListFooterComponent && <props.ListFooterComponent />}
             </ScrollView>
-            {props.installAction && <FloatingActionButton
+            {mounted && props.installAction && <FloatingActionButton
                 positionBottom={bottomInset + 8}
                 icon={findAssetId("PlusLargeIcon")}
                 onPress={onInstallPress}
             />}
-        </ErrorBoundary>
+        </>
     );
 }

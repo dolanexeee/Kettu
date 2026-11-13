@@ -17,12 +17,11 @@ import { NavigationNative } from "@metro/common";
 import {
   Button,
   Card,
-  FlashList,
   IconButton,
   Text,
 } from "@metro/common/components";
-import { ComponentProps, useEffect } from "react";
-import { View } from "react-native";
+import { useEffect } from "react";
+import { ScrollView, View } from "react-native";
 
 import { UnifiedPluginModel } from "./models";
 import unifyBunnyPlugin from "./models/bunny";
@@ -35,20 +34,43 @@ const { AlertModal, AlertActions, AlertActionButton } = lazyDestructure(() =>
   findByProps("AlertModal", "AlertActions"),
 );
 
-interface PluginPageProps
-  extends Partial<ComponentProps<typeof AddonPage<UnifiedPluginModel>>> {
-  useItems: () => unknown[];
-}
+export default function Plugins() {
+  // ROUND 11 (diagnostic): render-start marker, flushed immediately.
+  // If this line is absent while CUSTOMPAGE RENDER is present, the
+  // screen mounted but Plugins never rendered.
+  try { diagLog("PLUGINS RENDER START"); diagFlushNow(); } catch { /* ignore */ }
+  useProxy(settings);
+  const navigation = NavigationNative.useNavigation();
 
-function PluginPage(props: PluginPageProps) {
-  // ROUND 13 (diagnostic): locate the abort point. PLUGINS RENDER START
-  // fires 10x while ADDONPAGE RENDER START fires 2x — the render is
-  // aborted somewhere between Plugins and AddonPage. These markers say
-  // whether the render reaches PluginPage and whether useItems returns.
-  try { diagLog("PLUGINPAGE RENDER START"); diagFlushNow(); } catch { /* ignore */ }
+  // ROUND 15 (Discord 353): the item computation used to live in a
+  // `useItems` render-prop callback invoked from a separate PluginPage
+  // component — the hooks attached to PluginPage's fiber, and the rd
+  // logs showed the render dying between PLUGINPAGE RENDER START and
+  // USEITEMS START on every re-render. The computation now lives here,
+  // at the top level of the owning component, computed inline on every
+  // render (0-2 ms, same as before) and passed down as a plain array.
+  // There is no intermediate component left between Plugins and
+  // AddonPage.
+  useProxy(VdPluginManager.plugins);
+  useObservable([pluginSettings]);
+
+  // ROUND 10: diagnostic marker — this effect only runs if the page's
+  // render commits. If the screen stays black and this line never appears
+  // in kettu-diag.log, the render never committed (finds still blocking).
+  useEffect(() => { diagLog("PLUGINS PAGE MOUNTED"); }, []);
+
+  // ROUND 13 (diagnostic): proves the render got past the hooks to the
+  // return. If HOOKS DONE is absent while RENDER START is present, the
+  // render aborted inside the hooks themselves.
+  try { diagLog("PLUGINS HOOKS DONE"); diagFlushNow(); } catch { /* ignore */ }
+
+  // ROUND 15: items computed inline (was: useItems render-prop).
   const _t0 = Date.now();
-  const items = props.useItems();
-  try { diagLog(`PLUGINPAGE ITEMS n=${(items as any[])?.length} ms=${Date.now() - _t0}`); diagFlushNow(); } catch { /* ignore */ }
+  const corePlugins = [...registeredPlugins.values()].filter(p => isPluginInstalled(p.id) && isCorePlugin(p.id)).map(unifyBunnyPlugin);
+  const vdPlugins = Object.values(VdPluginManager.plugins).map(unifyVdPlugin);
+  const bnPlugins = [...registeredPlugins.values()].filter(p => isPluginInstalled(p.id) && !isCorePlugin(p.id)).map(unifyBunnyPlugin);
+  const items = [...corePlugins, ...vdPlugins, ...bnPlugins];
+  try { diagLog(`PLUGINS ITEMS n=${items.length} ms=${Date.now() - _t0}`); diagFlushNow(); } catch { /* ignore */ }
 
   return (
     <AddonPage<UnifiedPluginModel>
@@ -68,49 +90,7 @@ function PluginPage(props: PluginPageProps) {
       }}
       safeModeHint={{ message: Strings.SAFE_MODE_NOTICE_PLUGINS }}
       items={items}
-      {...props}
-    />
-  );
-}
-
-export default function Plugins() {
-  // ROUND 11 (diagnostic): render-start marker, flushed immediately.
-  // If this line is absent while CUSTOMPAGE RENDER is present, the
-  // screen mounted but Plugins never rendered.
-  try { diagLog("PLUGINS RENDER START"); diagFlushNow(); } catch { /* ignore */ }
-  useProxy(settings);
-  const navigation = NavigationNative.useNavigation();
-
-  // ROUND 10: diagnostic marker — this effect only runs if the page's
-  // render commits. If the screen stays black and this line never appears
-  // in kettu-diag.log, the render never committed (finds still blocking).
-  useEffect(() => { diagLog("PLUGINS PAGE MOUNTED"); }, []);
-
-  // ROUND 13 (diagnostic): proves the render got past the hooks to the
-  // return. If HOOKS DONE is absent while RENDER START is present, the
-  // render aborted inside the hooks themselves.
-  try { diagLog("PLUGINS HOOKS DONE"); diagFlushNow(); } catch { /* ignore */ }
-
-  return (
-    <PluginPage
-      useItems={() => {
-        // ROUND 13 (diagnostic): time the item computation — it runs
-        // inside PluginPage's render, so a slow/throwing useItems is
-        // visible here (a throw would hit the boundary instead).
-        try { diagLog("USEITEMS START"); diagFlushNow(); } catch { /* ignore */ }
-        const _t0 = Date.now();
-        useProxy(VdPluginManager.plugins);
-        useObservable([pluginSettings]);
-
-            const corePlugins = [...registeredPlugins.values()].filter(p => isPluginInstalled(p.id) && isCorePlugin(p.id)).map(unifyBunnyPlugin);
-            const vdPlugins = Object.values(VdPluginManager.plugins).map(unifyVdPlugin);
-            const bnPlugins = [...registeredPlugins.values()].filter(p => isPluginInstalled(p.id) && !isCorePlugin(p.id)).map(unifyBunnyPlugin);
-
-            const _items = [...corePlugins, ...vdPlugins, ...bnPlugins];
-            try { diagLog(`USEITEMS DONE n=${_items.length} ms=${Date.now() - _t0}`); diagFlushNow(); } catch { /* ignore */ }
-            return _items;
-        }}
-        ListHeaderComponent={() => {
+      ListHeaderComponent={() => {
             const unproxiedPlugins = Object.values(VdPluginManager.plugins).filter(p => !p.id.startsWith(VD_PROXY_PREFIX) && !p.id.startsWith(BUNNY_PROXY_PREFIX));
             if (!unproxiedPlugins.length) return null;
 
@@ -141,22 +121,24 @@ export default function Plugins() {
                     onPress={() => {
                       navigation.push("PUPU_CUSTOM_PAGE", {
                         title: "Unproxied Plugins",
+                        // ROUND 15: was FlashList (same native-list
+                        // component as the exonerated AddonPage list).
+                        // Plain ScrollView + map — only reached on tap.
                         render: () => {
                           return (
-                            <FlashList
-                              data={unproxiedPlugins}
+                            <ScrollView
                               contentContainerStyle={{ padding: 8 }}
-                              ItemSeparatorComponent={() => (
-                                <View style={{ height: 8 }} />
-                              )}
-                              renderItem={({ item: p }: any) => (
-                                <Card>
-                                  <Text variant="heading-md/semibold">
-                                    {p.id}
-                                  </Text>
-                                </Card>
-                              )}
-                            />
+                            >
+                              {unproxiedPlugins.map((p: any) => (
+                                <View key={String(p.id)} style={{ marginBottom: 8 }}>
+                                  <Card>
+                                    <Text variant="heading-md/semibold">
+                                      {p.id}
+                                    </Text>
+                                  </Card>
+                                </View>
+                              ))}
+                            </ScrollView>
                           );
                         },
                       });

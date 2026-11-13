@@ -5,12 +5,11 @@ import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { findAssetId } from "@lib/api/assets";
 import safeFetch from "@lib/utils/safeFetch";
 import { showToast } from "@ui/toasts";
-import Search from "@ui/components/Search";
 import { VdPluginManager } from "@core/vendetta/plugins";
-import { installTheme, themes, removeTheme } from "@lib/addons/themes";
-import { clipboard } from "@metro/common";
 import { hideSheet, showSheet } from "@lib/ui/sheets";
 import { AlertActionButton } from "@lib/ui/components/wrappers";
+import { installTheme, themes, removeTheme } from "@lib/addons/themes";
+import { clipboard } from "@metro/common";
 import { dismissAlert, openAlert } from "@lib/ui/alerts";
 import { ActionSheet, AlertModal, AlertActions, TableRow, TableRowGroup } from "@metro/common/components";
 import { lazyDestructure } from "@lib/utils/lazy";
@@ -278,7 +277,9 @@ export default function BrowserPage() {
     const [themesList, setThemesList] = React.useState<ThemeData[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState<string | null>(null);
-    const [searchQuery, setSearchQuery] = React.useState("");
+    // ROUND 15 (Discord 353): the search UI is REMOVED (see below).
+    // searchQuery stays "" so filterList returns the full list.
+    const [searchQuery] = React.useState("");
     const [installing, setInstalling] = React.useState<Set<string>>(new Set());
     const [refreshTick, setRefreshTick] = React.useState(0);
     const [sort, setSort] = React.useState<Sort>(Sort.DateNewest);
@@ -292,8 +293,13 @@ export default function BrowserPage() {
     // ROUND 14 (fix verification): proves the page committed — effects run
     // only after commit. If this line is absent on-device, the commit is
     // still blocked even with the ScrollView list.
+    // ROUND 15: also gates the RefreshControl below — it only renders
+    // after the first commit, so a native-view problem in it can no
+    // longer block the initial commit.
+    const [mounted, setMounted] = React.useState(false);
     React.useEffect(() => {
         try { diagLog("ADDONBROWSER MOUNTED"); diagFlushNow(); } catch { /* ignore */ }
+        setMounted(true);
     }, []);
 
     const fetchData = React.useCallback(async (isPluginMode: boolean) => {
@@ -441,13 +447,15 @@ export default function BrowserPage() {
                         </View>
                     </View>
 
+                    {/* ROUND 15 (Discord 353): the <Search> (TextInput) is
+                        REMOVED. Evidence: the BrowserPage never commits
+                        (its fetch effect never runs) and Search/TextInput
+                        is the component it shares with the Plugins page,
+                        the other no-commit page — while General, the one
+                        page that commits, has no Search. The sort button
+                        stays. Search returns once the page commits
+                        without it. */}
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 6 }}>
-                        <Search
-                            placeholder={`Search ${mode}...`}
-                            isRound={true}
-                            onChangeText={setSearchQuery}
-                            style={{ flex: 1 }}
-                        />
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                         <IconButton
                             size="md"
@@ -482,10 +490,12 @@ export default function BrowserPage() {
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingBottom: 90, paddingHorizontal: 5 }}
                 refreshControl={
+                    mounted ? (
                     <RefreshControl
                         refreshing={loading}
                         onRefresh={mode === "plugins" ? fetchPlugins : fetchThemes}
                     />
+                    ) : undefined
                 }
             >
                 {mode === "plugins" ? (
