@@ -1,6 +1,6 @@
 import { awaitStorage, createFileBackend, createMMKVBackend, createStorage, wrapSync } from "@core/vendetta/storage";
 import { diagFlushNow, diagLog } from "@lib/api/diag";
-import { writeFile } from "@lib/api/native/fs";
+import { fileExists, readFile, writeFile } from "@lib/api/native/fs";
 import { getStoredTheme, getThemeFilePath, isPyonLoader, isThemeSupported } from "@lib/api/native/loader";
 import { awaitStorage as newAwaitStorage } from "@lib/api/storage";
 import { safeFetch } from "@lib/utils";
@@ -130,7 +130,26 @@ export async function removeTheme(id: string) {
 
 export async function updateThemes() {
     await awaitStorage(themes);
-    const currentTheme = getThemeFromLoader();
+    let currentTheme = getThemeFromLoader();
+    // ROUND 16 (Discord 353): the loader's storedTheme can be null
+    // even when a theme file exists on disk — the native loader
+    // doesn't always populate it. Read the theme file directly as a
+    // fallback before giving up on the restore.
+    if (!currentTheme) {
+        const themePath = getThemeFilePath();
+        if (themePath) {
+            const rel = themePath.startsWith("pyoncord/") ? themePath.slice("pyoncord/".length) : themePath;
+            const prefix = themePath.startsWith("pyoncord/") ? "pyoncord/" : "";
+            try {
+                if (await fileExists(rel, { prefix })) {
+                    const parsed = JSON.parse(await readFile(rel, { prefix }));
+                    if (parsed && typeof parsed === "object" && typeof parsed.id === "string" && parsed.data) {
+                        currentTheme = parsed as VdThemeInfo;
+                    }
+                }
+            } catch { /* file missing/unparseable — nothing to restore */ }
+        }
+    }
     // ROUND 14 (Discord 353): a fresh install wipes the VENDETTA_THEMES
     // MMKV store, but the active theme survives in the loader's native
     // theme file — so the Themes page shows n=0 ("Oops! Nothing to see
@@ -143,6 +162,12 @@ export async function updateThemes() {
             themes[currentTheme.id] = { ...currentTheme, selected: true };
             try { diagLog(`THEMES RESTORED id=${currentTheme.id}`); diagFlushNow(); } catch { /* ignore */ }
         } catch { /* never break theme init for the restore */ }
+    } else if (Object.keys(themes).length === 0) {
+        // ROUND 16 (diagnostic): the store is empty AND no theme was
+        // found on the loader or on disk — the Themes page showing n=0
+        // is correct, and the user just needs to re-install the theme
+        // from its URL. Log the branch so the next diag log says so.
+        try { diagLog("THEMES RESTORE SKIP store empty, no loader theme on disk"); diagFlushNow(); } catch { /* ignore */ }
     }
     await Promise.allSettled(Object.keys(themes).map(id => fetchTheme(id, currentTheme?.id === id)));
 }

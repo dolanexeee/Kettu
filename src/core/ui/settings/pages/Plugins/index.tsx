@@ -1,25 +1,11 @@
-import { Strings } from "@core/i18n";
-import AddonPage from "@core/ui/components/AddonPage";
-import PluginCard from "@core/ui/settings/pages/Plugins/components/PluginCard";
 import { VdPluginManager } from "@core/vendetta/plugins";
 import { useProxy } from "@core/vendetta/storage";
-import { isCorePlugin, isPluginInstalled, pluginSettings, registeredPlugins, corePluginInstances } from "@lib/addons/plugins";
-import { Author } from "@lib/addons/types";
-import { findAssetId } from "@lib/api/assets";
+import { isCorePlugin, isPluginInstalled, pluginSettings, registeredPlugins } from "@lib/addons/plugins";
 import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { settings } from "@lib/api/settings";
 import { useObservable } from "@lib/api/storage";
-import { showToast } from "@lib/ui/toasts";
-import { BUNNY_PROXY_PREFIX, VD_PROXY_PREFIX } from "@lib/utils/constants";
-import { lazyDestructure } from "@lib/utils/lazy";
-import { findByProps } from "@metro";
 import { NavigationNative } from "@metro/common";
-import {
-  Button,
-  Card,
-  IconButton,
-  Text,
-} from "@metro/common/components";
+import { Text } from "@metro/common/components";
 import { useEffect } from "react";
 import { ScrollView, View } from "react-native";
 
@@ -27,32 +13,23 @@ import { UnifiedPluginModel } from "./models";
 import unifyBunnyPlugin from "./models/bunny";
 import unifyVdPlugin from "./models/vendetta";
 
-const { openAlert } = lazyDestructure(() =>
-  findByProps("openAlert", "dismissAlert"),
-);
-const { AlertModal, AlertActions, AlertActionButton } = lazyDestructure(() =>
-  findByProps("AlertModal", "AlertActions"),
-);
-
 export default function Plugins() {
   // ROUND 11 (diagnostic): render-start marker, flushed immediately.
   // If this line is absent while CUSTOMPAGE RENDER is present, the
   // screen mounted but Plugins never rendered.
   try { diagLog("PLUGINS RENDER START"); diagFlushNow(); } catch { /* ignore */ }
   useProxy(settings);
+  // ROUND 16 (diagnostic): per-hook markers — the rf logs showed the
+  // re-renders aborting between PLUGINS RENDER START and PLUGINS HOOKS
+  // DONE, i.e. inside one of these four hooks, with no throw ever
+  // caught by any boundary. These markers name the exact hook.
+  try { diagLog("PLUGINS HOOK settings OK"); diagFlushNow(); } catch { /* ignore */ }
   const navigation = NavigationNative.useNavigation();
-
-  // ROUND 15 (Discord 353): the item computation used to live in a
-  // `useItems` render-prop callback invoked from a separate PluginPage
-  // component — the hooks attached to PluginPage's fiber, and the rd
-  // logs showed the render dying between PLUGINPAGE RENDER START and
-  // USEITEMS START on every re-render. The computation now lives here,
-  // at the top level of the owning component, computed inline on every
-  // render (0-2 ms, same as before) and passed down as a plain array.
-  // There is no intermediate component left between Plugins and
-  // AddonPage.
+  try { diagLog("PLUGINS HOOK nav OK"); diagFlushNow(); } catch { /* ignore */ }
   useProxy(VdPluginManager.plugins);
+  try { diagLog("PLUGINS HOOK plugins OK"); diagFlushNow(); } catch { /* ignore */ }
   useObservable([pluginSettings]);
+  try { diagLog("PLUGINS HOOK observable OK"); diagFlushNow(); } catch { /* ignore */ }
 
   // ROUND 10: diagnostic marker — this effect only runs if the page's
   // render commits. If the screen stays black and this line never appears
@@ -72,151 +49,40 @@ export default function Plugins() {
   const items = [...corePlugins, ...vdPlugins, ...bnPlugins];
   try { diagLog(`PLUGINS ITEMS n=${items.length} ms=${Date.now() - _t0}`); diagFlushNow(); } catch { /* ignore */ }
 
-  return (
-    <AddonPage<UnifiedPluginModel>
-      CardComponent={PluginCard}
-      title={Strings.PLUGINS}
-      searchKeywords={[
-        "name",
-        "description",
-        (p) =>
-          p.authors
-            ?.map((a: Author | string) => (typeof a === "string" ? a : a.name))
-            .join() || "",
-      ]}
-      sortOptions={{
-        "Name (A-Z)": (a, b) => a.name.localeCompare(b.name),
-        "Name (Z-A)": (a, b) => b.name.localeCompare(a.name),
-      }}
-      safeModeHint={{ message: Strings.SAFE_MODE_NOTICE_PLUGINS }}
-      items={items}
-      ListHeaderComponent={() => {
-            const unproxiedPlugins = Object.values(VdPluginManager.plugins).filter(p => !p.id.startsWith(VD_PROXY_PREFIX) && !p.id.startsWith(BUNNY_PROXY_PREFIX));
-            if (!unproxiedPlugins.length) return null;
+  // ROUND 16 (Discord 353): BARE-PAGE SPLIT. The rf logs proved the
+  // full pass reaches ADDONPAGE RESULTS n=10 but the first PluginCard
+  // never renders, and the re-renders abort inside the hooks above —
+  // with Search gone, PluginPage gone, and the renderer stabilized.
+  // This minimal page keeps the same hooks + items computation but
+  // renders plain Text rows instead of AddonPage + PluginCard, so the
+  // next log splits cards from container: if it mounts, the cards (or
+  // the AddonPage list) are the blocker; if it still loops with the
+  // same hook-abort signature, the blocker is in the hooks/navigation
+  // layer itself. Tap a row to toggle that plugin (core plugins are
+  // not toggleable, same as before).
+  try { diagLog(`PLUGINS BARE ROWS n=${items.length}`); diagFlushNow(); } catch { /* ignore */ }
 
+  return (
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: 12 }}
+    >
+      {items.map((p: UnifiedPluginModel) => {
+        const core = isCorePlugin(p.id);
         return (
-          <View style={{ marginVertical: 12, marginHorizontal: 10 }}>
-            <Card border="strong">
-              <View
-                style={{
-                  flex: 1,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  flexDirection: "row",
-                }}
-              >
-                <View style={{ gap: 6, flexShrink: 1 }}>
-                  <Text variant="heading-md/bold">Unproxied Plugins Found</Text>
-                  <Text variant="text-sm/medium" color="text-muted">
-                    Plugins installed from unproxied sources may run unverified
-                    code in this app without your awareness.
-                  </Text>
-                </View>
-                <View style={{ marginLeft: "auto" }}>
-                  <IconButton
-                    size="sm"
-                    variant="secondary"
-                    icon={findAssetId("CircleInformationIcon-primary")}
-                    style={{ marginLeft: 8 }}
-                    onPress={() => {
-                      navigation.push("PUPU_CUSTOM_PAGE", {
-                        title: "Unproxied Plugins",
-                        // ROUND 15: was FlashList (same native-list
-                        // component as the exonerated AddonPage list).
-                        // Plain ScrollView + map — only reached on tap.
-                        render: () => {
-                          return (
-                            <ScrollView
-                              contentContainerStyle={{ padding: 8 }}
-                            >
-                              {unproxiedPlugins.map((p: any) => (
-                                <View key={String(p.id)} style={{ marginBottom: 8 }}>
-                                  <Card>
-                                    <Text variant="heading-md/semibold">
-                                      {p.id}
-                                    </Text>
-                                  </Card>
-                                </View>
-                              ))}
-                            </ScrollView>
-                          );
-                        },
-                      });
-                    }}
-                  />
-                </View>
-              </View>
-            </Card>
+          <View key={String(p.id)} style={{ paddingVertical: 10 }}>
+            <Text
+              variant="heading-md/semibold"
+              onPress={core ? undefined : () => p.toggle(!p.isEnabled())}
+            >
+              {p.name}
+            </Text>
+            <Text variant="text-sm/medium" color="text-muted">
+              {String(p.id)} — {p.isEnabled() ? "enabled" : "disabled"}{core ? " (core)" : ""}
+            </Text>
           </View>
         );
-      }}
-      installAction={{
-        label: "Install a plugin",
-        fetchFn: async (url: string) => {
-          if (
-            !url.startsWith(VD_PROXY_PREFIX) &&
-            !url.startsWith(BUNNY_PROXY_PREFIX) &&
-            !settings.developerSettings
-          ) {
-            openAlert(
-              "bunny-plugin-unproxied-confirmation",
-              <AlertModal
-                title="Hold On!"
-                content="You're trying to install a plugin from an unproxied external source. This means you're trusting the creator to run their code in this app without your knowledge. Are you sure you want to continue?"
-                extraContent={
-                  <Card>
-                    <Text variant="text-md/bold">{url}</Text>
-                  </Card>
-                }
-                actions={
-                  <AlertActions>
-                    <AlertActionButton
-                      text="Continue"
-                      variant="primary"
-                      onPress={() => {
-                        VdPluginManager.installPlugin(url)
-                          .then(() =>
-                            showToast(
-                              Strings.TOASTS_INSTALLED_PLUGIN,
-                              findAssetId("Check"),
-                            ),
-                          )
-                          .catch((e) =>
-                            openAlert(
-                              "bunny-plugin-install-failed",
-                              <AlertModal
-                                title="Install Failed"
-                                content={`Unable to install plugin from '${url}':`}
-                                extraContent={
-                                  <Card>
-                                    <Text variant="text-md/normal">
-                                      {e instanceof Error
-                                        ? e.message
-                                        : String(e)}
-                                    </Text>
-                                  </Card>
-                                }
-                                actions={
-                                  <AlertActionButton
-                                    text="Okay"
-                                    variant="primary"
-                                  />
-                                }
-                              />,
-                            ),
-                          );
-                      }}
-                    />
-                    <AlertActionButton text="Cancel" variant="secondary" />
-                  </AlertActions>
-                }
-              />,
-            );
-          } else {
-            return await VdPluginManager.installPlugin(url);
-          }
-        },
-      }}
-    />
+      })}
+    </ScrollView>
   );
 }
