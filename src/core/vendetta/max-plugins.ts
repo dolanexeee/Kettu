@@ -31,7 +31,7 @@ import translateJs from "./max-plugins/translate.txt";
 
 // Bump this when a baked-in plugin's .txt/manifest changes, so existing
 // installs pick up the new copy on next launch.
-export const KETTU_MAX_SEED_VERSION = 2;
+export const KETTU_MAX_SEED_VERSION = 3;
 
 interface MaxPluginEntry {
     id: string;
@@ -126,11 +126,25 @@ const MAX_PLUGINS: MaxPluginEntry[] = [
 export function seedMaxPlugins(plugins: Record<string, VendettaPlugin>) {
     for (const entry of MAX_PLUGINS) {
         const existing = plugins[entry.id];
-        if (existing && existing.manifest.hash === entry.manifest.hash) continue;
+        if (existing && existing.manifest.hash === entry.manifest.hash) {
+            // ROUND 9: a seed-version bump is new code. A baked plugin
+            // disabled by a transient start failure under an older build
+            // (startPlugin used to persist enabled=false) would otherwise
+            // stay disabled forever even though the fix is shipped.
+            // Force it back on — the user wants all six MAX plugins.
+            // (A user-removed plugin is resurrected by a version bump
+            // too; that is the documented trade-off of bumping the seed
+            // version, see the note on maxSeedStore in plugins.ts.)
+            if (!existing.enabled) {
+                existing.enabled = true;
+                logger.log(`Kettu MAX: re-enabled baked-in plugin: ${entry.manifest.name}`);
+            }
+            continue;
+        }
         plugins[entry.id] = {
             id: entry.id,
             manifest: entry.manifest,
-            enabled: existing?.enabled ?? true,
+            enabled: true,
             update: false,
             js: entry.js,
         };

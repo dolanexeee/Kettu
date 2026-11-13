@@ -91,8 +91,16 @@ export function proxyLazy<T, I extends ExemptedEntries>(factory: () => T, opts: 
 
     const proxy = new Proxy(dummy, lazyHandler) as T & I;
     factories.set(proxy, proxyFactory);
+    // ROUND 9 (Discord 353 black screen): the lazy handler used to call
+    // the RAW factory on every trap invocation, so every property access
+    // on a proxyLazy proxy (e.g. FlashList, TextInput, Button — the
+    // findProp/findSingular components) re-ran a full Metro find. On a
+    // cold cache each find is a full module scan; the addon pages resolve
+    // ~15-20 distinct component filters on first open, which blocked the
+    // JS thread for tens of seconds (black screen, back navigation dead).
+    // Store the MEMOIZED factory so each proxy resolves at most once.
     proxyContextHolder.set(dummy, {
-        factory,
+        factory: proxyFactory,
         options: opts,
     });
 

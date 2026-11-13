@@ -42,7 +42,16 @@ export const url = nativeModuleProxy.NativeLinkingModule || nativeModuleProxy.DC
 // Flux
 export const Flux = findByPropsLazy("connectStores");
 // TODO: Making this a proxy/lazy fuck things up for some reason
-export const FluxDispatcher = findByProps("_interceptors") as Dispatcher;
+// ROUND 9 (Discord 353, Message Logger dead on a cold cache): the old
+// single-prop filter ("_interceptors") is too weak — on a cold cache the
+// full scan returns the LOWEST module id exporting that prop, which need
+// not be the real dispatcher, so the Logger (and the core flux
+// interceptor) silently installed on the wrong object and never saw a
+// dispatch. The real dispatcher also exports dispatch/register/subscribe,
+// so require all four — that combination is unique to it. (On a warm
+// cache the findIndex returned the previously-resolved correct id, which
+// is why the Logger worked at 10:35 and died on the fresh install.)
+export const FluxDispatcher = findByProps("dispatch", "_interceptors", "register", "subscribe") as Dispatcher;
 export const FluxUtils = findByProps("useStateFromStores");
 
 // React

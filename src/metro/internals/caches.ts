@@ -34,15 +34,18 @@ function buildInitCache() {
     // navigation started in that window — or a first render whose lazy
     // finds hit uninitialised modules while it was pending — leaves the
     // pushed screen black until the JS thread frees up (Plugins page,
-    // 12:38; same symptom as round 4, 08:22). Chunk the work with a ~16 ms
-    // time budget per macrotask so the thread stays responsive while the
-    // cache warms. Nothing awaits the storm, so chunking changes no
-    // ordering guarantee: finds work the same with or without it.
+    // 12:38; same symptom as round 4, 08:22). Chunk the work with a
+    // ~50 ms time budget per macrotask so the thread stays responsive
+    // while the cache warms. (ROUND 9: raised from 16 ms — at 16 ms the
+    // storm takes so long to finish that the user can open the addon
+    // pages while it is still running, and the pages' own finds then do
+    // the slow factory-executing scans synchronously. 50 ms still yields
+    // regularly and finishes ~3x sooner.)
     setTimeout(() => {
         const ids = Object.keys(window.modules);
         let i = 0;
         const step = () => {
-            const deadline = Date.now() + 16;
+            const deadline = Date.now() + 50;
             while (i < ids.length && Date.now() < deadline) {
                 require("./modules").requireModule(ids[i++]);
             }

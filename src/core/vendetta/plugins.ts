@@ -141,7 +141,13 @@ export const VdPluginManager = {
             }
 
             delete pluginInstance[id];
-            plugin.enabled = false;
+            // ROUND 9: do NOT persist enabled=false here. A transient
+            // start failure (e.g. a cold-cache Metro find missing on this
+            // build) used to permanently kill the plugin — the stored
+            // disabled state survived every later boot, so a baked-in
+            // plugin (Message Logger) could die silently forever after
+            // one bad launch. Leave `enabled` as-is; the next boot
+            // retries the start.
         }
     },
 

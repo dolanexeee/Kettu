@@ -11,6 +11,7 @@ import { patchCommands } from "@lib/api/commands";
 import { patchLogHook } from "@lib/api/debug";
 import { injectFluxInterceptor } from "@lib/api/flux";
 import { patchJsx } from "@lib/api/react/jsx";
+import { warmAddonFinds } from "@lib/api/warmFinds";
 import { logger } from "@lib/utils/logger";
 import { patchSettings } from "@ui/settings";
 import { initDebugger } from "@lib/api/debug";
@@ -42,6 +43,12 @@ export default async () => {
     );
 
     initDebugger()
+
+    // ROUND 9: warm the addon pages' Metro finds in the background (one
+    // per macrotask). On a cold cache the first open of Plugins / Addon
+    // Browser would otherwise do ~15-20 full module scans synchronously
+    // (black screen). Fire-and-forget — never awaited.
+    warmAddonFinds();
 
     // Assign window object
     window.bunny = lib;
