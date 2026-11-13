@@ -1,4 +1,5 @@
 import { Emitter, EmitterEvent, EmitterListener, EmitterListenerData } from "@core/vendetta/Emitter";
+import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { NativeCacheModule, NativeFileModule } from "@lib/api/native/modules";
 import { Platform } from "react-native";
 
@@ -90,6 +91,10 @@ export function useProxy<T>(storage: T): T {
     React.useEffect(() => {
         const listener: EmitterListener = (event: EmitterEvent, data: EmitterListenerData) => {
             if (event === "DEL" && data.value === storage) return;
+            // ROUND 13 (diagnostic): a store write re-rendered a
+            // subscriber. If these fire ~4x per cluster, the store is
+            // the loop driver; if they never fire, stores are exonerated.
+            try { diagLog(`USEPROXY UPDATE event=${event}`); diagFlushNow(); } catch { /* ignore */ }
             forceUpdate();
         };
 

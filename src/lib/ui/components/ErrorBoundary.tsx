@@ -12,7 +12,15 @@ type ErrorBoundaryState = {
 
 export interface ErrorBoundaryProps {
     children: JSX.Element | Falsy | (JSX.Element | Falsy)[];
+    // ROUND 13 (diagnostic): identifies which boundary instance rendered.
+    // The rc log showed Plugins re-rendering 10x while the memoized
+    // CustomPageRenderer re-rendered 2x — this counter says whether the
+    // boundary (the parent of the page) re-rendered with it (parent-driven)
+    // or stayed at 2 (the driver is inside the page itself).
+    label?: string;
 }
+
+const renderCounts = new Map<string, number>();
 
 export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
     constructor(props: ErrorBoundaryProps) {
@@ -46,6 +54,13 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
     }
 
     render() {
+        // ROUND 13 (diagnostic): count renders per labelled instance.
+        if (this.props.label) {
+            const n = (renderCounts.get(this.props.label) ?? 0) + 1;
+            renderCounts.set(this.props.label, n);
+            try { diagLog(`ERRBOUNDARY RENDER label=${this.props.label} n=${n}`); diagFlushNow(); } catch { /* never break rendering for logging */ }
+        }
+
         if (!this.state.hasErr) return this.props.children;
 
         return (

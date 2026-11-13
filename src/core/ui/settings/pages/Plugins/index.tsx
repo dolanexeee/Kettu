@@ -41,7 +41,14 @@ interface PluginPageProps
 }
 
 function PluginPage(props: PluginPageProps) {
+  // ROUND 13 (diagnostic): locate the abort point. PLUGINS RENDER START
+  // fires 10x while ADDONPAGE RENDER START fires 2x — the render is
+  // aborted somewhere between Plugins and AddonPage. These markers say
+  // whether the render reaches PluginPage and whether useItems returns.
+  try { diagLog("PLUGINPAGE RENDER START"); diagFlushNow(); } catch { /* ignore */ }
+  const _t0 = Date.now();
   const items = props.useItems();
+  try { diagLog(`PLUGINPAGE ITEMS n=${(items as any[])?.length} ms=${Date.now() - _t0}`); diagFlushNow(); } catch { /* ignore */ }
 
   return (
     <AddonPage<UnifiedPluginModel>
@@ -79,9 +86,19 @@ export default function Plugins() {
   // in kettu-diag.log, the render never committed (finds still blocking).
   useEffect(() => { diagLog("PLUGINS PAGE MOUNTED"); }, []);
 
+  // ROUND 13 (diagnostic): proves the render got past the hooks to the
+  // return. If HOOKS DONE is absent while RENDER START is present, the
+  // render aborted inside the hooks themselves.
+  try { diagLog("PLUGINS HOOKS DONE"); diagFlushNow(); } catch { /* ignore */ }
+
   return (
     <PluginPage
       useItems={() => {
+        // ROUND 13 (diagnostic): time the item computation — it runs
+        // inside PluginPage's render, so a slow/throwing useItems is
+        // visible here (a throw would hit the boundary instead).
+        try { diagLog("USEITEMS START"); diagFlushNow(); } catch { /* ignore */ }
+        const _t0 = Date.now();
         useProxy(VdPluginManager.plugins);
         useObservable([pluginSettings]);
 
@@ -89,7 +106,9 @@ export default function Plugins() {
             const vdPlugins = Object.values(VdPluginManager.plugins).map(unifyVdPlugin);
             const bnPlugins = [...registeredPlugins.values()].filter(p => isPluginInstalled(p.id) && !isCorePlugin(p.id)).map(unifyBunnyPlugin);
 
-            return [...corePlugins, ...vdPlugins, ...bnPlugins];
+            const _items = [...corePlugins, ...vdPlugins, ...bnPlugins];
+            try { diagLog(`USEITEMS DONE n=${_items.length} ms=${Date.now() - _t0}`); diagFlushNow(); } catch { /* ignore */ }
+            return _items;
         }}
         ListHeaderComponent={() => {
             const unproxiedPlugins = Object.values(VdPluginManager.plugins).filter(p => !p.id.startsWith(VD_PROXY_PREFIX) && !p.id.startsWith(BUNNY_PROXY_PREFIX));

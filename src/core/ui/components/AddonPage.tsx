@@ -227,7 +227,7 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
     );
 
     return (
-        <ErrorBoundary>
+        <ErrorBoundary label="AddonPageList">
             <FlashList
                 data={results}
                 extraData={search}

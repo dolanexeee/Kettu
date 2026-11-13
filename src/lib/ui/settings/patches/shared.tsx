@@ -1,4 +1,4 @@
-import { diagFlushNow, diagLog } from "@lib/api/diag";
+import { diagFlushNow, diagLog, idOf } from "@lib/api/diag";
 import { NavigationNative } from "@metro/common";
 import { findByPropsLazy } from "@metro/wrappers";
 import { ErrorBoundary } from "@ui/components";
@@ -18,13 +18,13 @@ export const CustomPageRenderer = React.memo(() => {
     // (black screen, no error, no mount marker). Flushed immediately:
     // if JS dies right after this, the line is already on disk.
     try {
-        diagLog(`CUSTOMPAGE RENDER params=[${Object.keys(route.params ?? {}).join(",")}] renderType=${typeof PageComponent}`);
+        diagLog(`CUSTOMPAGE RENDER params=[${Object.keys(route.params ?? {}).join(",")}] renderType=${typeof PageComponent} navId=${idOf(navigation)} paramsId=${idOf(route.params)}`);
         diagFlushNow();
     } catch { /* never break rendering for logging */ }
 
     React.useEffect(() => void navigation.setOptions({ ...args }), []);
 
-    return <ErrorBoundary><PageComponent /></ErrorBoundary>;
+    return <ErrorBoundary label="CustomPage"><PageComponent /></ErrorBoundary>;
 });
 
 export function wrapOnPress(

@@ -1,5 +1,6 @@
 import { Emitter } from "@core/vendetta/Emitter";
 import { Observable, ObserverOptions } from "@gullerya/object-observer";
+import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { fileExists, readFile, removeFile, writeFile } from "@lib/api/native/fs";
 import { debounce } from "es-toolkit";
 
@@ -46,7 +47,11 @@ export function useObservable(observables: Observable[], opts?: ObserverOptions)
     const [, forceUpdate] = React.useReducer(n => ~n, 0);
 
     React.useEffect(() => {
-        const listener = () => forceUpdate();
+        const listener = () => {
+            // ROUND 13 (diagnostic): see useProxy note above.
+            try { diagLog("USEOBSERVABLE UPDATE"); diagFlushNow(); } catch { /* ignore */ }
+            forceUpdate();
+        };
 
         observables.forEach(o => Observable.observe(o, listener, opts));
 

@@ -23,7 +23,7 @@ export default ({ onChangeText, placeholder, style, isRound }: SearchProps) => {
         onChangeText?.(value);
     };
 
-    return <ErrorBoundary>
+    return <ErrorBoundary label="Search">
         <View style={style}>
             <TextInput
                 grow={true}
