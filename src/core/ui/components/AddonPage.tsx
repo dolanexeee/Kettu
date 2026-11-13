@@ -109,6 +109,34 @@ function InputAlert(props: { label: string, fetchFn: (url: string) => Promise<vo
     />;
 }
 
+// Discord 353 removed the generic HelpMessage component (no module exports
+// a component named HelpMessage — the Mana redesign). The lazy proxy in
+// @metro/common/components throws on first use when it cannot resolve, which
+// killed the whole Plugins/Themes page in Safe Mode. Resolve it defensively
+// and fall back to plain text when it is absent.
+function SafeModeNotice({ message, footer }: { message?: string; footer?: ReactNode }) {
+    let ResolvedHelpMessage: typeof HelpMessage | null = null;
+    try {
+        // Any property read forces the lazy proxy to resolve (or throw).
+        void (HelpMessage as any).displayName;
+        ResolvedHelpMessage = HelpMessage;
+    } catch {
+        ResolvedHelpMessage = null;
+    }
+
+    if (ResolvedHelpMessage) {
+        const HM = ResolvedHelpMessage;
+        return <HM messageType={0}>{message}</HM>;
+    }
+
+    return (
+        <>
+            {message ? <Text variant="text-md/medium">{message}</Text> : null}
+            {footer}
+        </>
+    );
+}
+
 export default function AddonPage<T extends object>({ CardComponent, ...props }: AddonPageProps<T>) {
     const [search, setSearch] = React.useState("");
     const [sortFn, setSortFn] = React.useState<((a: T, b: T) => number) | null>(() => null);
@@ -167,10 +195,7 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
     const headerElement = (
         <View style={{ paddingBottom: 8 }}>
             {settings.safeMode?.enabled && <View style={{ marginBottom: 10 }}>
-                <HelpMessage messageType={0}>
-                    {props.safeModeHint?.message}
-                </HelpMessage>
-                {props.safeModeHint?.footer}
+                <SafeModeNotice message={props.safeModeHint?.message} footer={props.safeModeHint?.footer} />
             </View>}
             <View style={{ flexDirection: "row", gap: 8 }}>
                 <Search style={{ flexGrow: 1 }} isRound={!!props.sortOptions} onChangeText={v => setSearch(v)} />
