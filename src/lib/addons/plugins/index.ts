@@ -1,6 +1,7 @@
 import { getCorePlugins } from "@core/plugins";
 import { readFile, removeFile, writeFile } from "@lib/api/native/fs";
 import { awaitStorage, createStorage, getPreloadedStorage, preloadStorageIfExists, purgeStorage, updateStorage } from "@lib/api/storage";
+import { settings } from "@lib/api/settings";
 import { safeFetch } from "@lib/utils";
 import { OFFICIAL_PLUGINS_REPO_URL } from "@lib/utils/constants";
 import { semver } from "@metro/common";
@@ -388,7 +389,12 @@ export async function updatePlugins() {
  * @internal
  */
 export async function initPlugins() {
-    await awaitStorage(pluginRepositories, pluginSettings);
+    // ROUND 7: real Safe Mode — no plugin system starts in Safe Mode, so it is
+    // a reliable recovery. (Vendetta's initPlugins was already gated; Bunny's
+    // was not.) Tradeoff: core plugins do not run in Safe Mode either, e.g.
+    // the messagefix nonce fix is off while Safe Mode is on.
+    await awaitStorage(settings, pluginRepositories, pluginSettings);
+    if (settings.safeMode?.enabled) return;
 
     // Now, start all enabled plugins...
     Promise.allSettled([...registeredPlugins.keys()].map(async id => {
