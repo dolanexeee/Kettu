@@ -27,10 +27,28 @@ function buildInitCache() {
 
     // Force load all modules so useful modules are pre-cached. Add a minor
     // delay so the cache is initialized before the modules are loaded.
+    // ROUND 8 (Discord 353): the old single synchronous loop over every
+    // module monopolised the JS thread for seconds on a cold cache (fresh
+    // install). The storm is scheduled fire-and-forget (never awaited), so
+    // it can fire after first render and overlap user interaction; a
+    // navigation started in that window — or a first render whose lazy
+    // finds hit uninitialised modules while it was pending — leaves the
+    // pushed screen black until the JS thread frees up (Plugins page,
+    // 12:38; same symptom as round 4, 08:22). Chunk the work with a ~16 ms
+    // time budget per macrotask so the thread stays responsive while the
+    // cache warms. Nothing awaits the storm, so chunking changes no
+    // ordering guarantee: finds work the same with or without it.
     setTimeout(() => {
-        for (const id in window.modules) {
-            require("./modules").requireModule(id);
-        }
+        const ids = Object.keys(window.modules);
+        let i = 0;
+        const step = () => {
+            const deadline = Date.now() + 16;
+            while (i < ids.length && Date.now() < deadline) {
+                require("./modules").requireModule(ids[i++]);
+            }
+            if (i < ids.length) setTimeout(step, 0);
+        };
+        step();
     }, 100);
 
     _metroCache = cache;
