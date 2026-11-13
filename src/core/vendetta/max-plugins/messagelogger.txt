@@ -372,7 +372,11 @@ var api = {
     },
     storageReady: null, // Vendetta storage is synchronous — nothing to await.
     showToast: function (text) {
-        try { vendetta.ui.toasts.showToast(String(text)); } catch (e) {}
+        /* KETTU MAX 2.0.6 DIAGNOSTIC: toasts neutralized. Message Logger no
+           longer calls vendetta.ui.toasts.showToast — testing whether a
+           Logger toast crashes Discord 353's Mana ToastContainer
+           (TypeError: Cannot read property 'position' of undefined).
+           Delete-blocking, edit history, persistence: unchanged. */
     },
     React: (function () { try { return vendetta.metro.common.React; } catch (e) { return null; } })(),
     ReactNative: (function () { try { return vendetta.metro.common.ReactNative; } catch (e) { return null; } })(),

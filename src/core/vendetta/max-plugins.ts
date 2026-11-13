@@ -31,7 +31,7 @@ import translateJs from "./max-plugins/translate.txt";
 
 // Bump this when a baked-in plugin's .txt/manifest changes, so existing
 // installs pick up the new copy on next launch.
-export const KETTU_MAX_SEED_VERSION = 1;
+export const KETTU_MAX_SEED_VERSION = 2;
 
 interface MaxPluginEntry {
     id: string;
@@ -47,7 +47,7 @@ const MAX_PLUGINS: MaxPluginEntry[] = [
             description: "Keeps deleted and edited messages visible — deleted messages stay in place in the chat, edits keep their history. View the log in the plugin settings.",
             authors: [{ name: "dolanexeee" }],
             main: "index.js",
-            hash: "c34b47fe74d6eb167c15a099adf006ade724e4b7aa44f0ab5ad6978e36f6fefb",
+            hash: "c9505fbcffb3549ee584b3466a125cc66665c2d5e049791e62477a695e476984",
         },
         js: messageloggerJs,
     },
@@ -110,17 +110,27 @@ const MAX_PLUGINS: MaxPluginEntry[] = [
 
 /**
  * Seed the baked-in Kettu MAX plugins into the plugin storage.
- * Skips any plugin the user already has (manual install or a previous seed),
- * so a user's own copy — and a user's removal — is never overwritten here.
+ * Skips any plugin the user already has at the same baked hash (manual
+ * install or a previous seed), so a user's own copy — and a user's removal
+ * (while the seed version is unchanged) — is never overwritten here.
+ * When the baked copy changed (manifest hash differs, e.g. the max6
+ * Message Logger with neutralized toasts), the stored copy IS overwritten
+ * with the new baked js + manifest, preserving the user's enabled state.
  * Callers must persist the new seed version after this runs.
+ *
+ * MAX 2.0.6 diagnostic: the baked Message Logger's showToast is neutralized
+ * (see max-plugins/messagelogger.txt) to test whether a Logger toast crashes
+ * Discord 353's Mana ToastContainer. Seed version bumped 1 -> 2 so existing
+ * installs re-seed the new copy on next launch.
  */
 export function seedMaxPlugins(plugins: Record<string, VendettaPlugin>) {
     for (const entry of MAX_PLUGINS) {
-        if (plugins[entry.id]) continue;
+        const existing = plugins[entry.id];
+        if (existing && existing.manifest.hash === entry.manifest.hash) continue;
         plugins[entry.id] = {
             id: entry.id,
             manifest: entry.manifest,
-            enabled: true,
+            enabled: existing?.enabled ?? true,
             update: false,
             js: entry.js,
         };
