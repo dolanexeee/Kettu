@@ -1,3 +1,4 @@
+import { diagLog } from "@lib/api/diag";
 import { fileExists, readFile, writeFile } from "@lib/api/native/fs";
 import { NativeClientInfoModule } from "@lib/api/native/modules";
 import { debounce } from "es-toolkit";
@@ -43,6 +44,10 @@ function buildInitCache() {
     // regularly and finishes ~3x sooner.)
     setTimeout(() => {
         const ids = Object.keys(window.modules);
+        // ROUND 10: log the storm to the diagnostic log (module count +
+        // duration) so the on-device warm-up timing is measurable.
+        diagLog(`STORM START modules=${ids.length}`);
+        const stormStart = Date.now();
         let i = 0;
         const step = () => {
             const deadline = Date.now() + 50;
@@ -50,6 +55,7 @@ function buildInitCache() {
                 require("./modules").requireModule(ids[i++]);
             }
             if (i < ids.length) setTimeout(step, 0);
+            else diagLog(`STORM DONE ms=${Date.now() - stormStart}`);
         };
         step();
     }, 100);

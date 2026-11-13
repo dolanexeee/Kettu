@@ -1,7 +1,7 @@
 import { _patcherDelaySymbol } from "@lib/api/patcher";
 import { proxyLazy } from "@lib/utils/lazy";
 
-import { findExports } from "./finders";
+import { findExports, registerWarmFilter } from "./finders";
 import { getMetroCache } from "./internals/caches";
 import { metroModules, subscribeModule } from "./internals/modules";
 import type { FilterFn, LazyModuleContext } from "./types";
@@ -34,6 +34,11 @@ export function getLazyContext<A extends unknown[]>(proxy: any): LazyModuleConte
 }
 
 export function createLazyModule<A extends unknown[]>(filter: FilterFn<A>) {
+    // ROUND 10: register the filter so the single-pass warm can populate
+    // its findIndex entry before the proxy is first accessed. (Covers
+    // findByPropsLazy / findByNameLazy / findByDisplayNameLazy /
+    // findByFilePathLazy — the bulk of metro/common and components.)
+    registerWarmFilter(filter);
     let cache: any = undefined;
 
     const moduleId = getIndexedFind(filter);

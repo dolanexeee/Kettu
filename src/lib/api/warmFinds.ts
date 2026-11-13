@@ -1,4 +1,4 @@
-// ROUND 9 — warm the Metro finds the addon pages need (Discord 353).
+// ROUND 10 — warm the Metro finds the addon pages need (Discord 353).
 //
 // Root cause (see ROUND9-DIAGNOSIS.md): on a cold cache (fresh install)
 // every distinct lazy find is a full scan of all Discord modules. The
@@ -10,19 +10,53 @@
 // warms module *initialisation*; it never populates the *findIndex*, so
 // it could not fix this.
 //
-// This runs the same finds in the background after boot, one per
-// macrotask, so the findIndex is populated before the user opens an
-// addon page and the first open is O(1) per find. Every touch is
-// guarded: a find that fails on this build (renamed/removed component)
-// is simply skipped — the page's own error boundary handles it later.
-// Fire-and-forget; never awaited; safe to call once at boot.
+// ROUND 9 tried to fix it by touching ~36 lazy proxies one per macrotask
+// in the background. That ALSO failed on-device (max6.2, fresh install):
+// each touch is itself a full cold-cache scan, so the warm-up needs tens
+// of seconds — the user opens Plugins within seconds, so the page's first
+// render still did ~15-20 synchronous cold scans. The warm-up was
+// structurally too slow for an immediate page open; the memoized
+// proxyLazy only prevents REPEATED scans, not the first-open cost.
+//
+// ROUND 10 fix: warm every filter in ONE pass over the registry
+// (finders.warmFiltersAsync), testing all registered filters per module
+// and populating the findIndex for all matches at once. One scan instead
+// of ~36, so the warm-up costs roughly one scan (~seconds) instead of
+// tens of seconds. Filters register themselves when created
+// (createLazyModule, findProp/findSingular); the few created lazily
+// inside closures (lazyDestructure factories) are registered explicitly
+// below. The findIndex is keyed by the filter's uniq string, so warming
+// a uniq warms every proxy that uses it.
+//
+// After the single pass, the old proxy-touch loop runs as a safety net:
+// touches are O(1) for warmed proxies (memoized + findIndex hit), and
+// only a filter the single pass missed would do a full scan.
+//
+// Timings are written to the diagnostic log (kettu-diag.log) so the
+// on-device behaviour is measurable: warm duration, filters warmed,
+// and every slow find (>100 ms) with its uniq.
 
+import { diagLog } from "@lib/api/diag";
 import { NavigationNative, clipboard, tokens } from "@metro/common";
 import * as components from "@metro/common/components";
+import { byProps } from "@metro/filters";
+import { getWarmFilters, registerWarmFilter, warmFiltersAsync } from "@metro/finders";
 
-// One touch per entry. Accessing any property on a lazy proxy forces its
-// factory (the Metro find) and populates the findIndex via cacheId.
-// `.displayName` is benign on both function components and plain objects.
+// Filters created lazily inside closures (lazyDestructure factories) —
+// not auto-registered by createLazyModule/findProp/findSingular, so
+// register them explicitly. (The SafeAreaView/useToken destructures and
+// the Plugins page's own lazyDestructures. Same uniq as the closures'
+// findByProps calls, so warming these warms those proxies too.)
+registerWarmFilter(byProps("useSafeAreaInsets"));
+registerWarmFilter(byProps("useToken"));
+registerWarmFilter(byProps("openAlert", "dismissAlert"));
+registerWarmFilter(byProps("AlertModal", "AlertActions"));
+
+// Safety net (ROUND 9 touches). Accessing any property on a lazy proxy
+// forces its factory (the Metro find) and populates the findIndex via
+// cacheId. `.displayName` is benign on both function components and
+// plain objects. After the single pass these are O(1); only a filter the
+// pass missed would do a full scan here.
 const TOUCHES: Array<() => unknown> = [
     () => (components.FlashList as any)?.displayName,
     () => (components.TextInput as any)?.displayName,
@@ -62,10 +96,21 @@ const TOUCHES: Array<() => unknown> = [
     () => (clipboard as any)?.displayName,
 ];
 
-export function warmAddonFinds() {
+export async function warmAddonFinds() {
+    const filters = getWarmFilters();
+    diagLog(`WARM START filters=${filters.length}`);
+    try {
+        const result = await warmFiltersAsync(filters, 100);
+        diagLog(`WARM DONE warmed=${result.warmed}/${result.filters} notFound=${result.notFound} scanned=${result.scanned} ms=${result.ms}`);
+    } catch (e) {
+        diagLog(`WARM ERROR ${e}`);
+    }
+
+    // Safety net: touch the proxies one per macrotask (ROUND 9 path).
+    // O(1) for warmed proxies; a missed filter does one full scan here.
     let i = 0;
     const step = () => {
-        if (i >= TOUCHES.length) return;
+        if (i >= TOUCHES.length) { diagLog("WARM TOUCHES DONE"); return; }
         try {
             TOUCHES[i]();
         } catch {

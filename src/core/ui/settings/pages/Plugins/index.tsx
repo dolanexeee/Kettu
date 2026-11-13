@@ -6,6 +6,7 @@ import { useProxy } from "@core/vendetta/storage";
 import { isCorePlugin, isPluginInstalled, pluginSettings, registeredPlugins, corePluginInstances } from "@lib/addons/plugins";
 import { Author } from "@lib/addons/types";
 import { findAssetId } from "@lib/api/assets";
+import { diagLog } from "@lib/api/diag";
 import { settings } from "@lib/api/settings";
 import { useObservable } from "@lib/api/storage";
 import { showToast } from "@lib/ui/toasts";
@@ -20,7 +21,7 @@ import {
   IconButton,
   Text,
 } from "@metro/common/components";
-import { ComponentProps } from "react";
+import { ComponentProps, useEffect } from "react";
 import { View } from "react-native";
 
 import { UnifiedPluginModel } from "./models";
@@ -68,6 +69,11 @@ function PluginPage(props: PluginPageProps) {
 export default function Plugins() {
   useProxy(settings);
   const navigation = NavigationNative.useNavigation();
+
+  // ROUND 10: diagnostic marker — this effect only runs if the page's
+  // render commits. If the screen stays black and this line never appears
+  // in kettu-diag.log, the render never committed (finds still blocking).
+  useEffect(() => { diagLog("PLUGINS PAGE MOUNTED"); }, []);
 
   return (
     <PluginPage

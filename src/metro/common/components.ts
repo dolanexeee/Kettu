@@ -1,7 +1,8 @@
 /* eslint-disable prefer-destructuring */
 import { lazyDestructure, proxyLazy } from "@lib/utils/lazy";
 import { createFilterDefinition } from "@metro/factories";
-import { findExports } from "@metro/finders";
+import { byProps } from "@metro/filters";
+import { findExports, registerWarmFilter } from "@metro/finders";
 import { findByDisplayNameLazy, findByNameLazy, findByProps, findByPropsLazy } from "@metro/wrappers";
 
 import * as t from "./types/components";
@@ -11,8 +12,23 @@ const bySingularProp = createFilterDefinition<[string]>(
     prop => `bunny.metro.common.components.bySingularProp(${prop})`
 );
 
-const findSingular = (prop: string) => proxyLazy(() => findExports(bySingularProp(prop))?.[prop]);
-const findProp = (...props: string[]) => proxyLazy(() => findByProps(...props)[props[0]]);
+const findSingular = (prop: string) => {
+    // ROUND 10: create the filter once and register it for the single-pass
+    // warm (same filter object the proxy's factory uses — same uniq, same
+    // test). Previously the filter was created inside the factory closure,
+    // so the warm-up could not warm it without running a full find.
+    const filter = bySingularProp(prop);
+    registerWarmFilter(filter);
+    return proxyLazy(() => findExports(filter)?.[prop]);
+};
+const findProp = (...props: string[]) => {
+    // ROUND 10: same as findSingular — hoist + register the filter.
+    // findExports(filter) is exactly findByProps(...props); the factory
+    // expression is unchanged.
+    const filter = byProps(...props);
+    registerWarmFilter(filter);
+    return proxyLazy(() => findExports(filter)[props[0]]);
+};
 
 // Discord
 export const LegacyAlert = findByDisplayNameLazy("FluxContainer(Alert)");
