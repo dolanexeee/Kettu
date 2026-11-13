@@ -1,4 +1,5 @@
 import { awaitStorage, createFileBackend, createMMKVBackend, createStorage, wrapSync } from "@core/vendetta/storage";
+import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { writeFile } from "@lib/api/native/fs";
 import { getStoredTheme, getThemeFilePath, isPyonLoader, isThemeSupported } from "@lib/api/native/loader";
 import { awaitStorage as newAwaitStorage } from "@lib/api/storage";
@@ -130,6 +131,19 @@ export async function removeTheme(id: string) {
 export async function updateThemes() {
     await awaitStorage(themes);
     const currentTheme = getThemeFromLoader();
+    // ROUND 14 (Discord 353): a fresh install wipes the VENDETTA_THEMES
+    // MMKV store, but the active theme survives in the loader's native
+    // theme file — so the Themes page shows n=0 ("Oops! Nothing to see
+    // here") while a theme is visibly applied. Reconcile: if the store
+    // is empty but the loader still has a theme, put it back in the
+    // store so the list shows it (the re-fetch below then refreshes it
+    // from its URL; a failed re-fetch leaves the restored entry intact).
+    if (Object.keys(themes).length === 0 && currentTheme) {
+        try {
+            themes[currentTheme.id] = { ...currentTheme, selected: true };
+            try { diagLog(`THEMES RESTORED id=${currentTheme.id}`); diagFlushNow(); } catch { /* ignore */ }
+        } catch { /* never break theme init for the restore */ }
+    }
     await Promise.allSettled(Object.keys(themes).map(id => fetchTheme(id, currentTheme?.id === id)));
 }
 

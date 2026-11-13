@@ -8,7 +8,7 @@ import isValidHttpUrl from "@lib/utils/isValidHttpUrl";
 import { lazyDestructure, proxyLazy } from "@lib/utils/lazy";
 import { findByProps } from "@metro";
 import { clipboard, NavigationNative } from "@metro/common";
-import { AlertActionButton, AlertModal, Button, FlashList, FloatingActionButton, HelpMessage, IconButton, Stack, Text, TextInput, useSafeAreaInsets } from "@metro/common/components";
+import { AlertActionButton, AlertModal, Button, FloatingActionButton, HelpMessage, IconButton, Stack, Text, TextInput, useSafeAreaInsets } from "@metro/common/components";
 import { ErrorBoundary, Search } from "@ui/components";
 import { isNotNil } from "es-toolkit";
 import fuzzysort from "fuzzysort";
@@ -146,6 +146,13 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
     const { bottom: bottomInset } = useSafeAreaInsets();
     const navigation = NavigationNative.useNavigation();
 
+    // ROUND 14 (fix verification): proves the page committed — effects run
+    // only after commit. If this line is absent on-device, the commit is
+    // still blocked even with the ScrollView list.
+    useEffect(() => {
+        try { diagLog(`ADDONPAGE MOUNTED title=${props.title}`); diagFlushNow(); } catch { /* ignore */ }
+    }, []);
+
     useEffect(() => {
         if (props.OptionsActionSheetComponent) {
             navigation.setOptions({
@@ -226,24 +233,36 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
         </View>
     );
 
+    // ROUND 14 (Discord 353): FlashList never commits on 353 for these
+    // pages (proven by the rd logs: full render completes, mount effect
+    // never runs, no cards). A plain ScrollView renders the same items
+    // through plain Views — the same primitives the General settings
+    // page uses, which commit fine. Lists here are short (10 plugins,
+    // a handful of themes/fonts), so virtualization is not needed.
+    const listEmptyElement = (
+        <View style={{ gap: 12, padding: 12, alignItems: "center" }}>
+            <Image source={findAssetId("devices_not_found")!} />
+            <Text variant="text-lg/semibold" color="text-default">
+                Hmmm... could not find that!
+            </Text>
+        </View>
+    );
+
     return (
         <ErrorBoundary label="AddonPageList">
-            <FlashList
-                data={results}
-                extraData={search}
-                estimatedItemSize={136}
-                ListHeaderComponent={headerElement}
-                ListEmptyComponent={() => <View style={{ gap: 12, padding: 12, alignItems: "center" }}>
-                    <Image source={findAssetId("devices_not_found")!} />
-                    <Text variant="text-lg/semibold" color="text-default">
-                        Hmmm... could not find that!
-                    </Text>
-                </View>}
+            <ScrollView
+                style={{ flex: 1 }}
                 contentContainerStyle={{ padding: 8, paddingHorizontal: 12, paddingBottom: 90 }}
-                ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-                ListFooterComponent={props.ListFooterComponent}
-                renderItem={({ item }: any) => <CardComponent item={item.obj} result={item} />}
-            />
+            >
+                {headerElement}
+                {results.length === 0 ? listEmptyElement : results.map((item: any, i: number) => (
+                    <View key={String(item.obj?.id ?? item.obj?.name ?? i)}>
+                        {i > 0 && <View style={{ height: 8 }} />}
+                        <CardComponent item={item.obj} result={item} />
+                    </View>
+                ))}
+                {props.ListFooterComponent && <props.ListFooterComponent />}
+            </ScrollView>
             {props.installAction && <FloatingActionButton
                 positionBottom={bottomInset + 8}
                 icon={findAssetId("PlusLargeIcon")}

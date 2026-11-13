@@ -1,6 +1,7 @@
 import { React, NavigationNative } from "@metro/common";
-import { View } from "react-native";
-import { Stack, Button, IconButton, Text, Card, FlashList } from "@metro/common/components";
+import { RefreshControl, ScrollView, View } from "react-native";
+import { Stack, Button, IconButton, Text, Card } from "@metro/common/components";
+import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { findAssetId } from "@lib/api/assets";
 import safeFetch from "@lib/utils/safeFetch";
 import { showToast } from "@ui/toasts";
@@ -288,6 +289,13 @@ export default function BrowserPage() {
         });
     }, [navigation]);
 
+    // ROUND 14 (fix verification): proves the page committed — effects run
+    // only after commit. If this line is absent on-device, the commit is
+    // still blocked even with the ScrollView list.
+    React.useEffect(() => {
+        try { diagLog("ADDONBROWSER MOUNTED"); diagFlushNow(); } catch { /* ignore */ }
+    }, []);
+
     const fetchData = React.useCallback(async (isPluginMode: boolean) => {
         setLoading(true);
         setError(null);
@@ -466,13 +474,21 @@ export default function BrowserPage() {
                 </Stack>
             </View>
 
-            <FlashList
-                data={sortedAndFiltered}
-                refreshing={loading}
-                onRefresh={mode === "plugins" ? fetchPlugins : fetchThemes}
-                estimatedItemSize={200}
+            {/* ROUND 14 (Discord 353): FlashList never commits on 353 for
+                these pages (rd logs: full render, no mount/fetch effect).
+                Plain ScrollView + map renders the same cards through plain
+                Views. Pull-to-refresh is preserved via RefreshControl. */}
+            <ScrollView
+                style={{ flex: 1 }}
                 contentContainerStyle={{ paddingBottom: 90, paddingHorizontal: 5 }}
-                ListHeaderComponent={mode === "plugins" ? (
+                refreshControl={
+                    <RefreshControl
+                        refreshing={loading}
+                        onRefresh={mode === "plugins" ? fetchPlugins : fetchThemes}
+                    />
+                }
+            >
+                {mode === "plugins" ? (
                     <View style={{ paddingVertical: 6, paddingHorizontal: 8 }}>
                         <Card border="strong">
                             <View style={{ flex: 1, justifyContent: "center", alignItems: "center", flexDirection: "row" }}>
@@ -486,9 +502,8 @@ export default function BrowserPage() {
                         </Card>
                     </View>
                 ) : null}
-                //@ts-ignore
-                renderItem={({ item: addon }) => (
-                    <View style={{ paddingVertical: 6, paddingHorizontal: 8 }}>
+                {sortedAndFiltered.map((addon: any) => (
+                    <View key={String(addon.installUrl ?? addon.name)} style={{ paddingVertical: 6, paddingHorizontal: 8 }}>
                         <AddonCard
                             addon={addon}
                             isPluginMode={mode === "plugins"}
@@ -497,8 +512,8 @@ export default function BrowserPage() {
                             setRefreshTick={setRefreshTick}
                         />
                     </View>
-                )}
-            />
+                ))}
+            </ScrollView>
         </View>
     );
 }

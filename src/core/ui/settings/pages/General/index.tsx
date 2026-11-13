@@ -5,6 +5,7 @@ import About from "@core/ui/settings/pages/General/About";
 import { useProxy } from "@core/vendetta/storage";
 import { findAssetId } from "@lib/api/assets";
 import { getDebugInfo } from "@lib/api/debug";
+import { diagFlushNow, diagLog } from "@lib/api/diag";
 import { BundleUpdaterManager } from "@lib/api/native/modules";
 import { settings } from "@lib/api/settings";
 import { openAlert } from "@lib/ui/alerts";
@@ -13,9 +14,16 @@ import { NavigationNative } from "@metro/common";
 import { AlertActionButton, AlertActions, AlertModal, Stack, TableRow, TableRowGroup, TableSwitchRow } from "@metro/common/components";
 import { Linking, ScrollView } from "react-native";
 import CodebergIcon from "@assets/icons/codeberg-logo_icon_white.png";
+import { useEffect } from "react";
 
 export default function General() {
     useProxy(settings);
+
+    // ROUND 14 (fix verification): proves the page committed — effects run
+    // only after commit.
+    useEffect(() => {
+        try { diagLog("GENERAL MOUNTED"); diagFlushNow(); } catch { /* ignore */ }
+    }, []);
 
     const debugInfo = getDebugInfo();
     const navigation = NavigationNative.useNavigation();
