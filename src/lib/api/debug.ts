@@ -40,7 +40,13 @@ export async function toggleSafeMode() {
             await selectTheme(themes[settings.safeMode?.currentThemeId]);
         }
     }
-    setTimeout(BundleUpdaterManager.reload, 400);
+    // ROUND 6: the safeMode flag is persisted by an async fire-and-forget file
+    // write (vendetta storage backend); reloading after only 400ms can race
+    // it, so the next boot loads with safe mode still off — the user taps
+    // "Reload in Safe Mode" and crashes again identically. Give the write a
+    // full second to flush before reloading.
+    await new Promise(r => setTimeout(r, 1000));
+    BundleUpdaterManager.reload();
 }
 
 let socket: WebSocket | undefined;

@@ -13,5 +13,11 @@ export async function toggleSafeMode({
     const enabled = (settings.safeMode ??= { enabled: to }).enabled = to;
     const currentColor = getCurrentTheme();
     await writeThemeToNative(enabled ? {} : currentColor?.data ?? {});
-    if (reload) setTimeout(() => BundleUpdaterManager.reload(), 500);
+    // ROUND 6: the safeMode flag write is async fire-and-forget (see
+    // lib/api/debug.ts) — wait for it to flush before reloading, or safe mode
+    // may not engage on the next boot.
+    if (reload) {
+        await new Promise(r => setTimeout(r, 1000));
+        BundleUpdaterManager.reload();
+    }
 }
