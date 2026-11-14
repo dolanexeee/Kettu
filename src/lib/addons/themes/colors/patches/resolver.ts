@@ -1,4 +1,5 @@
 import { _colorRef } from "@lib/addons/themes/colors/updater";
+import { diagLog } from "@lib/api/diag";
 import { NativeThemeModule } from "@lib/api/native/modules";
 import { before, instead } from "@lib/api/patcher";
 import { findByProps } from "@metro";
@@ -25,17 +26,29 @@ const SEMANTIC_FALLBACK_MAP: Record<string, string> = {
 };
 
 export default function patchDefinitionAndResolver() {
-    const callback = ([theme]: any[]) => theme === _colorRef.key ? [_colorRef.current!.reference] : void 0;
+    // ROUND 20: safety net only. updateBunnyColor no longer passes the
+    // fake bn-theme-N key to updateTheme, so this should never fire. If
+    // it does, a fake key leaked from a path outside updateBunnyColor.
+    const callback = ([theme]: any[]) => {
+        if (theme === _colorRef.key) {
+            try { diagLog(`THEME NATIVE REDIRECT leaked key=${theme} -> ${_colorRef.current!.reference}`); } catch { /* ignore */ }
+            return [_colorRef.current!.reference];
+        }
+        return void 0;
+    };
 
+    // ROUND 20: the fake key no longer leaks into theme comparisons.
+    // ThemeTypes.DARKER/LIGHT always return the real native values;
+    // ThemeStore.theme is the reference theme now.
     Object.defineProperty(themeTypes, "DARKER", {
         configurable: true,
         enumerable: true,
-        get: () => _colorRef.current?.reference === "darker" ? _colorRef.key : origDarker,
+        get: () => origDarker,
     });
     Object.defineProperty(themeTypes, "LIGHT", {
         configurable: true,
         enumerable: true,
-        get: () => _colorRef.current?.reference === "light" ? _colorRef.key : origLight,
+        get: () => origLight,
     });
 
     Object.keys(tokenReference.RawColor).forEach(key => {
@@ -54,9 +67,11 @@ export default function patchDefinitionAndResolver() {
         before("updateTheme", NativeThemeModule, callback),
         instead("resolveSemanticColor", tokenReference.default.meta ?? tokenReference.default.internal, (args: any[], orig: any) => {
             if (!_colorRef.current) return orig(...args);
-            if (args[0] !== _colorRef.key) return orig(...args);
-
-            args[0] = _colorRef.current.reference;
+            // ROUND 20: ThemeStore.theme is now the native reference
+            // theme ("darker"/"light"), not the fake bn-theme-N key.
+            // Resolve custom colors whenever a custom theme is active
+            // and the requested theme is that reference.
+            if (args[0] !== _colorRef.current.reference) return orig(...args);
 
             const [name, colorDef] = extractInfo(_colorRef.current!.reference, args[1]);
 

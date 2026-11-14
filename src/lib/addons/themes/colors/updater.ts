@@ -1,3 +1,4 @@
+import { diagLog } from "@lib/api/diag";
 import { settings } from "@lib/api/settings";
 import { findByProps, findByPropsLazy, findByStoreNameLazy } from "@metro";
 
@@ -52,7 +53,20 @@ export function updateBunnyColor(colorManifest: ColorManifest | null, { update =
     }
 
     if (update) {
+        // ROUND 20 (Discord 353 keyboard dismiss): ThemeStore.theme must
+        // always be a REAL native theme ("darker"/"light"). Passing the
+        // fake bn-theme-N key here left JS holding a key unknown to iOS
+        // while native held the reference — any native<->JS re-derivation
+        // (keyboard-focus appearance sync, settings sync) flipped the
+        // theme and re-rendered the whole app, unmounting the focused
+        // TextInput and dismissing the keyboard on every tap. Color
+        // resolution is driven by _colorRef.current (see resolver.ts),
+        // not by this key, so passing the reference changes nothing
+        // about the applied colors.
         AppearanceManager.setShouldSyncAppearanceSettings(false);
-        AppearanceManager.updateTheme(internalDef != null ? ref.key : ref.lastSetDiscordTheme);
+        AppearanceManager.updateTheme(internalDef != null ? ref.current!.reference : ref.lastSetDiscordTheme);
+        if (internalDef != null) {
+            try { diagLog(`THEME KEY STABLE ref=${ref.current!.reference}`); } catch { /* ignore */ }
+        }
     }
 }
