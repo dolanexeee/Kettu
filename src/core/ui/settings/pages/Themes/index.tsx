@@ -1,6 +1,6 @@
 import { formatString, Strings } from "@core/i18n";
 import AddonPage from "@core/ui/components/AddonPage";
-import ThemeCard from "@core/ui/settings/pages/Themes/ThemeCard";
+import ThemeBareRow from "@core/ui/settings/pages/Themes/ThemeBareRow";
 import { useProxy } from "@core/vendetta/storage";
 import {
   getCurrentTheme,
@@ -64,7 +64,7 @@ export default function Themes() {
           />
         ),
       }}
-      CardComponent={ThemeCard}
+      BareRowComponent={ThemeBareRow}
       OptionsActionSheetComponent={() => {
         useObservable([colorsPref]);
 

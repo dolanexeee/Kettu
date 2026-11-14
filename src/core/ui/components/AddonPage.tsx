@@ -5,16 +5,12 @@ import { settings } from "@lib/api/settings";
 import { dismissAlert, openAlert } from "@lib/ui/alerts";
 import { showSheet } from "@lib/ui/sheets";
 import isValidHttpUrl from "@lib/utils/isValidHttpUrl";
-import { lazyDestructure, proxyLazy } from "@lib/utils/lazy";
-import { findByProps } from "@metro";
 import { clipboard, NavigationNative } from "@metro/common";
 import { AlertActionButton, AlertModal, Button, FloatingActionButton, HelpMessage, IconButton, Stack, Text, TextInput, useSafeAreaInsets } from "@metro/common/components";
 import { isNotNil } from "es-toolkit";
 import fuzzysort from "fuzzysort";
 import { ComponentType, ReactNode, useCallback, useEffect, useMemo } from "react";
-import { Image, ScrollView, View } from "react-native";
-
-const { showSimpleActionSheet, hideActionSheet } = lazyDestructure(() => findByProps("showSimpleActionSheet"));
+import { Image, Pressable, ScrollView, Text as RNText, View } from "react-native";
 
 type SearchKeywords<T> = Array<string | ((obj: T & {}) => string)>;
 
@@ -37,7 +33,13 @@ interface AddonPageProps<T extends object, I = any> {
 
     OptionsActionSheetComponent?: ComponentType<any>;
 
-    CardComponent: ComponentType<CardWrapper<T>>;
+    // ROUND 19 (Discord 353): bare rows — the CardComponent cards
+    // (Card/Stack/Text/FormRadio/IconButton) never commit once an item
+    // is installed (diag-10: ADDONPAGE RESULTS n=1, no mount, for
+    // Themes; Fonts shares this page and would loop identically).
+    // The row component renders plain RN primitives only and keeps the
+    // card's tap behaviour (apply/select). CardComponent is gone.
+    BareRowComponent: ComponentType<CardWrapper<T>>;
     ListHeaderComponent?: ComponentType<any>;
     ListFooterComponent?: ComponentType<any>;
 }
@@ -137,7 +139,7 @@ function SafeModeNotice({ message, footer }: { message?: string; footer?: ReactN
     );
 }
 
-export default function AddonPage<T extends object>({ CardComponent, ...props }: AddonPageProps<T>) {
+export default function AddonPage<T extends object>({ BareRowComponent, ...props }: AddonPageProps<T>) {
     // ROUND 11 (diagnostic): render-start marker, flushed immediately.
     try { diagLog("ADDONPAGE RENDER START"); diagFlushNow(); } catch { /* ignore */ }
     // ROUND 15 (Discord 353): the search UI is REMOVED for now (see
@@ -146,6 +148,23 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
     // unchanged.
     const [search] = React.useState("");
     const [sortFn, setSortFn] = React.useState<((a: T, b: T) => number) | null>(() => null);
+    // ROUND 19 (Discord 353): the sort IconButton is gone (see header
+    // below) — sorting cycles through the options on a plain Pressable
+    // instead, same as the Addon Browser's "Sort: …" button (round 17).
+    const [sortLabel, setSortLabel] = React.useState<string | null>(null);
+    const cycleSort = () => {
+        if (!props.sortOptions) return;
+        const labels = ["Default", ...Object.keys(props.sortOptions)];
+        const cur = sortLabel ?? "Default";
+        const next = labels[(labels.indexOf(cur) + 1) % labels.length];
+        if (next === "Default") {
+            setSortFn(null);
+            setSortLabel(null);
+        } else {
+            setSortFn(() => props.sortOptions![next]);
+            setSortLabel(next);
+        }
+    };
     const { bottom: bottomInset } = useSafeAreaInsets();
     const navigation = NavigationNative.useNavigation();
 
@@ -186,6 +205,11 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
     // ROUND 11 (diagnostic): did the item list compute?
     try { diagLog(`ADDONPAGE RESULTS n=${results.length}`); diagFlushNow(); } catch { /* ignore */ }
 
+    // ROUND 19 (Discord 353): proves the render reached the bare rows.
+    // If this line is absent while RESULTS is present, the render aborted
+    // between the list computation and the row mapping.
+    try { diagLog(`ADDONPAGE BARE ROWS n=${results.length}`); diagFlushNow(); } catch { /* ignore */ }
+
     const onInstallPress = useCallback(() => {
         if (!props.installAction) return () => { };
         const { label, onPress, fetchFn } = props.installAction;
@@ -218,33 +242,23 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
             {settings.safeMode?.enabled && <View style={{ marginBottom: 10 }}>
                 <SafeModeNotice message={props.safeModeHint?.message} footer={props.safeModeHint?.footer} />
             </View>}
-            {/* ROUND 15 (Discord 353): the <Search> (TextInput) is REMOVED
-                from the header. Evidence: the first plugin card never
-                renders in any log (no PLUGINCARD RENDER) although
-                ADDONPAGE RESULTS n=10 completes and the Search boundary
-                renders — the render dies in the stretch between Search
-                and the first card; Search/TextInput is present in BOTH
-                no-commit pages (Plugins, Addon Browser) and absent from
-                General, the one page that commits. Search returns once
-                the page commits without it. The sort button stays (plain
-                IconButton, same as General's icons). */}
+            {/* ROUND 19 (Discord 353): the sort <IconButton> is REMOVED.
+                Evidence: with n=1 the non-empty path paints the sort
+                IconButton (header) + the first card, and neither is ever
+                painted by a committing page's first paint — the same
+                elimination that proved Card + IconButton in round 17.
+                Sorting cycles on a plain Pressable instead (same pattern
+                as the Addon Browser, round 17); the action sheet is
+                deferred. */}
             {props.sortOptions && <View style={{ flexDirection: "row", gap: 8 }}>
-                <IconButton
-                    icon={findAssetId("ArrowsUpDownIcon")}
-                    variant="tertiary"
-                    disabled={!!search}
-                    onPress={() => showSimpleActionSheet({
-                        key: "AddonListSortOptions",
-                        header: {
-                            title: "Sort Options",
-                            onClose: () => hideActionSheet("AddonListSortOptions"),
-                        },
-                        options: Object.entries(props.sortOptions!).map(([name, fn]) => ({
-                            label: name,
-                            onPress: () => setSortFn(() => fn)
-                        }))
-                    })}
-                />
+                <Pressable
+                    onPress={cycleSort}
+                    style={{ paddingVertical: 8, paddingHorizontal: 12 }}
+                >
+                    <RNText style={{ color: "#FFFFFF", fontWeight: "600" }}>
+                        Sort: {sortLabel ?? "Default"}
+                    </RNText>
+                </Pressable>
             </View>}
             {props.ListHeaderComponent && <props.ListHeaderComponent />}
         </View>
@@ -280,7 +294,7 @@ export default function AddonPage<T extends object>({ CardComponent, ...props }:
                 {results.length === 0 ? listEmptyElement : results.map((item: any, i: number) => (
                     <View key={String(item.obj?.id ?? item.obj?.name ?? i)}>
                         {i > 0 && <View style={{ height: 8 }} />}
-                        <CardComponent item={item.obj} result={item} />
+                        <BareRowComponent item={item.obj} result={item} />
                     </View>
                 ))}
                 {props.ListFooterComponent && <props.ListFooterComponent />}

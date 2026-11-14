@@ -6,7 +6,7 @@ import { FontDefinition, fonts } from "@lib/addons/fonts";
 import { settings } from "@lib/api/settings";
 import { NavigationNative } from "@metro/common";
 
-import FontCard from "./FontCard";
+import FontBareRow from "./FontBareRow";
 
 export default function Fonts() {
     useProxy(settings);
@@ -24,7 +24,7 @@ export default function Fonts() {
             }}
             items={Object.values(fonts)}
             safeModeHint={{ message: Strings.SAFE_MODE_NOTICE_FONTS }}
-            CardComponent={FontCard}
+            BareRowComponent={FontBareRow}
             installAction={{
                 label: "Install a font",
                 onPress: () => {
