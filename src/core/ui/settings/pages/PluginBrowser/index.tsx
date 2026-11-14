@@ -1,22 +1,13 @@
 import { React, NavigationNative } from "@metro/common";
-import { RefreshControl, ScrollView, View } from "react-native";
-import { Stack, Button, IconButton, Text, Card } from "@metro/common/components";
+import { Pressable, RefreshControl, ScrollView, Text as RNText, View } from "react-native";
+import { AlertActions, AlertModal, Text } from "@metro/common/components";
 import { diagFlushNow, diagLog } from "@lib/api/diag";
-import { findAssetId } from "@lib/api/assets";
 import safeFetch from "@lib/utils/safeFetch";
 import { showToast } from "@ui/toasts";
 import { VdPluginManager } from "@core/vendetta/plugins";
-import { hideSheet, showSheet } from "@lib/ui/sheets";
 import { AlertActionButton } from "@lib/ui/components/wrappers";
 import { installTheme, themes, removeTheme } from "@lib/addons/themes";
-import { clipboard } from "@metro/common";
 import { dismissAlert, openAlert } from "@lib/ui/alerts";
-import { ActionSheet, AlertModal, AlertActions, TableRow, TableRowGroup } from "@metro/common/components";
-import { lazyDestructure } from "@lib/utils/lazy";
-import { findByProps } from "@metro";
-
-const { showSimpleActionSheet } = lazyDestructure(() => findByProps("showSimpleActionSheet"));
-const { hideActionSheet } = findByProps("hideActionSheet")
 
 interface BaseAddonData {
     name: string;
@@ -62,10 +53,10 @@ function InstallButton({ addon, isPluginMode, installing, setInstalling, setRefr
             } else {
                 await installTheme(addon.installUrl);
             }
-            showToast(`Installed ${addon.name}`, findAssetId("CheckIcon"));
+            showToast(`Installed ${addon.name}`);
             setInstalled(true);
         } catch (e) {
-            showToast(e instanceof Error ? e.message : String(e), findAssetId("CircleXIcon-primary"));
+            showToast(e instanceof Error ? e.message : String(e));
         } finally {
             setInstalling((prev: Iterable<unknown> | null | undefined) => { const s = new Set(prev); s.delete(normId); return s; });
             setRefreshTick((t: number) => t + 1);
@@ -79,10 +70,10 @@ function InstallButton({ addon, isPluginMode, installing, setInstalling, setRefr
             } else {
                 await removeTheme(addon.installUrl);
             }
-            showToast(`Uninstalled ${addon.name}`, findAssetId("TrashIcon"));
+            showToast(`Uninstalled ${addon.name}`);
             setInstalled(false);
         } catch (e) {
-            showToast(e instanceof Error ? e.message : String(e), findAssetId("CircleXIcon-primary"));
+            showToast(e instanceof Error ? e.message : String(e));
         } finally {
             setRefreshTick((t: number) => t + 1);
         }
@@ -124,87 +115,26 @@ function InstallButton({ addon, isPluginMode, installing, setInstalling, setRefr
         ));
     };
 
+    // ROUND 17 (Discord 353): bare InstallButton — plain Pressable + RN
+    // Text. The @metro Button + findAssetId icons are deferred until the
+    // bare page commits (same split as round 16's Plugins page).
+    const busy = installing.has(normId);
     return (
-        <Button
-            size="sm"
-            loading={installing.has(normId)}
-            text={!installed ? (installing.has(normId) ? "Installing..." : "Install") : "Uninstall"}
-            disabled={installing.has(normId)}
-            onPress={!installed ? promptInstall : uninstallAddon}
-            variant={!installed ? "primary" : "destructive"}
-            icon={findAssetId(!installed ? "DownloadIcon" : "TrashIcon")}
-        />
-    );
-}
-
-// @ts-ignore (i cant be bothered to type these)
-function TrailingButtons({ addon, isPluginMode, installing, setInstalling, setRefreshTick }) {
-    const copyAddonLink = () => {
-        clipboard.setString(addon.installUrl);
-        // @ts-ignore
-        showToast.showCopyToClipboard?.();
-    };
-
-    const copySourceUrl = () => {
-        const plugin = addon as PluginData;
-        clipboard.setString(plugin.sourceUrl);
-        // @ts-ignore
-        showToast.showCopyToClipboard?.();
-    };
-
-    const openAddonMenu = () => {
-        const actions = [
-            {
-                label: `Copy ${isPluginMode ? 'Plugin' : 'Theme'} Link`,
-                icon: findAssetId("CopyIcon"),
-                onPress: copyAddonLink
-            }
-        ];
-
-        if (isPluginMode && (addon as PluginData).sourceUrl) {
-            actions.push({
-                label: "Copy Source URL",
-                icon: findAssetId("CopyIcon"),
-                onPress: copySourceUrl
-            });
-        }
-
-        const sheetKey = `${isPluginMode ? 'plugin' : 'theme'}-menu`;
-        showSheet(sheetKey, () => (
-            <ActionSheet>
-                <TableRowGroup title={`${isPluginMode ? 'Plugin' : 'Theme'} Info`}>
-                    {actions.map((action, index) => (
-                        <TableRow
-                            key={index}
-                            label={action.label}
-                            icon={<TableRow.Icon source={action.icon} />}
-                            onPress={() => {
-                                action.onPress();
-                                hideSheet(sheetKey);
-                            }}
-                        />
-                    ))}
-                </TableRowGroup>
-            </ActionSheet>
-        ));
-    };
-
-    return (
-        <Stack spacing={8} direction="horizontal">
-            <IconButton
-                size="sm"
-                onPress={openAddonMenu}
-                variant="secondary"
-                icon={findAssetId("MoreHorizontalIcon")}
-            />
-            <InstallButton
-                addon={addon}
-                isPluginMode={isPluginMode}
-                installing={installing}
-                setInstalling={setInstalling}
-                setRefreshTick={setRefreshTick}
-            />
-        </Stack>
+        <Pressable
+            onPress={busy ? undefined : (!installed ? promptInstall : uninstallAddon)}
+            disabled={busy}
+            style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 8,
+                backgroundColor: !installed ? "#5865F2" : "#DA373C",
+                opacity: busy ? 0.6 : 1
+            }}
+        >
+            <RNText style={{ color: "#FFFFFF", fontWeight: "600" }}>
+                {!installed ? (busy ? "Installing..." : "Install") : "Uninstall"}
+            </RNText>
+        </Pressable>
     );
 }
 
@@ -213,7 +143,11 @@ function AddonCard({ addon, isPluginMode, installing, setInstalling, setRefreshT
     const { name, description, authors } = addon;
     const plugin = addon as PluginData;
 
-    let statusColor = "text-normal";
+    // ROUND 17 (Discord 353): bare AddonCard — plain View + RN Text rows.
+    // The @metro Card/Stack/Text, the IconButton menu and the copy-link
+    // actions are deferred until the bare page commits. Status colors
+    // kept verbatim from the full card.
+    let statusColor = "#B5BAC1";
     if (isPluginMode) {
         if (plugin.status === "working") statusColor = "#4ADE80";
         if (plugin.status === "broken") statusColor = "#EF4444";
@@ -221,42 +155,38 @@ function AddonCard({ addon, isPluginMode, installing, setInstalling, setRefreshT
     }
 
     return (
-        <Card>
-            <Stack spacing={16}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <View style={{ flexShrink: 1 }}>
-                        <Text numberOfLines={1} variant="heading-lg/semibold">
-                            {name}
-                        </Text>
-                        <Text variant="text-md/semibold" color="text-muted">
-                            by {authors?.join(", ") || "Unknown"}
-                        </Text>
-                        {isPluginMode && (
-                            <Text variant="text-md/semibold" style={{ color: statusColor }}>
-                                Status: {plugin.status}
-                            </Text>
-                        )}
-                    </View>
-                    <View>
-                        <TrailingButtons
-                            addon={addon}
-                            isPluginMode={isPluginMode}
-                            installing={installing}
-                            setInstalling={setInstalling}
-                            setRefreshTick={setRefreshTick}
-                        />
-                    </View>
+        <View style={{ padding: 12, backgroundColor: "rgba(255,255,255,0.04)", borderRadius: 10 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <View style={{ flexShrink: 1 }}>
+                    <RNText numberOfLines={1} style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "600" }}>
+                        {name}
+                    </RNText>
+                    <RNText style={{ color: "#B5BAC1", fontSize: 13 }}>
+                        by {authors?.join(", ") || "Unknown"}
+                    </RNText>
+                    {isPluginMode && (
+                        <RNText style={{ color: statusColor, fontSize: 13, fontWeight: "600" }}>
+                            Status: {plugin.status}
+                        </RNText>
+                    )}
                 </View>
-                <Text variant="text-md/medium">
-                    {description}
-                </Text>
-                {isPluginMode && plugin.warningMessage && (
-                    <Text variant="text-sm/medium" color="text-muted">
-                        Warning: {plugin.warningMessage}
-                    </Text>
-                )}
-            </Stack>
-        </Card>
+                <InstallButton
+                    addon={addon}
+                    isPluginMode={isPluginMode}
+                    installing={installing}
+                    setInstalling={setInstalling}
+                    setRefreshTick={setRefreshTick}
+                />
+            </View>
+            <RNText style={{ color: "#DBDEE1", fontSize: 14, marginTop: 8 }}>
+                {description}
+            </RNText>
+            {isPluginMode && plugin.warningMessage && (
+                <RNText style={{ color: "#B5BAC1", fontSize: 13, marginTop: 6 }}>
+                    Warning: {plugin.warningMessage}
+                </RNText>
+            )}
+        </View>
     );
 }
 
@@ -269,7 +199,21 @@ enum Sort {
     BrokenFirst = "Broken First",
 }
 
+const SORT_ORDER: Sort[] = [
+    Sort.DateNewest,
+    Sort.DateOldest,
+    Sort.NameAZ,
+    Sort.NameZA,
+    Sort.WorkingFirst,
+    Sort.BrokenFirst,
+];
+
 export default function BrowserPage() {
+    // ROUND 17 (diagnostic): render-start marker, flushed immediately.
+    // If this line is absent while CUSTOMPAGE RENDER is present, the
+    // abort happens before/at BrowserPage's entry (renderer/boundary
+    // layer — a new lead, see ROUND17-DIAGNOSIS §5).
+    try { diagLog("BROWSER RENDER START"); diagFlushNow(); } catch { /* ignore */ }
     const navigation = NavigationNative.useNavigation();
 
     const [mode, setMode] = React.useState<"plugins" | "themes">("plugins");
@@ -277,7 +221,7 @@ export default function BrowserPage() {
     const [themesList, setThemesList] = React.useState<ThemeData[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState<string | null>(null);
-    // ROUND 15 (Discord 353): the search UI is REMOVED (see below).
+    // ROUND 15 (Discord 353): the search UI is REMOVED.
     // searchQuery stays "" so filterList returns the full list.
     const [searchQuery] = React.useState("");
     const [installing, setInstalling] = React.useState<Set<string>>(new Set());
@@ -303,9 +247,14 @@ export default function BrowserPage() {
     }, []);
 
     const fetchData = React.useCallback(async (isPluginMode: boolean) => {
+        const modeName = isPluginMode ? "plugins" : "themes";
         setLoading(true);
         setError(null);
         try {
+            // ROUND 17 (diagnostic): fetch markers — the rg log could not
+            // distinguish "fetch failed" from "cards didn't render" if the
+            // page mounts but shows nothing.
+            try { diagLog(`BROWSER FETCH START mode=${modeName}`); diagFlushNow(); } catch { /* ignore */ }
             const url = isPluginMode ? PLUGIN_URL : THEME_URL;
             const response = await safeFetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -326,8 +275,11 @@ export default function BrowserPage() {
             } else {
                 setThemesList(addonList as ThemeData[]);
             }
+            try { diagLog(`BROWSER FETCH OK mode=${modeName} n=${addonList.length}`); diagFlushNow(); } catch { /* ignore */ }
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            const msg = e instanceof Error ? e.message : String(e);
+            try { diagLog(`BROWSER FETCH FAIL mode=${modeName} err=${msg}`); diagFlushNow(); } catch { /* ignore */ }
+            setError(msg);
             if (isPluginMode) {
                 setPlugins([]);
             } else {
@@ -402,84 +354,81 @@ export default function BrowserPage() {
         }
     }, [plugins, themesList, mode, searchQuery, sort]);
 
+    // ROUND 17 (diagnostic): proves the render got past the hooks to the
+    // return. If RENDER START is present but HOOKS DONE is absent, the
+    // render aborted inside the hooks themselves.
+    try { diagLog("BROWSER HOOKS DONE"); diagFlushNow(); } catch { /* ignore */ }
+
     if (error) {
+        // ROUND 17: error branch is bare too — plain View + RN Text +
+        // Pressable. It only renders post-commit (fetch runs in an
+        // effect), but there is no reason to keep @metro in this file's
+        // render paths at all while the split is being proven.
         return (
             <View style={{ flex: 1, paddingHorizontal: 8, justifyContent: "center", alignItems: "center" }}>
-                <Card style={{ gap: 8 }}>
-                    <Text style={{ textAlign: "center" }} variant="heading-lg/bold">
+                <View style={{ gap: 8, alignItems: "center" }}>
+                    <RNText style={{ textAlign: "center", color: "#FFFFFF", fontSize: 18, fontWeight: "700" }}>
                         An error occurred while fetching the repository
-                    </Text>
-                    <Text style={{ textAlign: "center" }} variant="text-sm/medium" color="text-muted">
+                    </RNText>
+                    <RNText style={{ textAlign: "center", color: "#B5BAC1", fontSize: 14 }}>
                         {error}
-                    </Text>
-                    <Button
-                        size="lg"
-                        text="Refetch"
+                    </RNText>
+                    <Pressable
                         onPress={() => fetchData(mode === "plugins")}
-                        icon={findAssetId("RetryIcon")}
-                    />
-                </Card>
+                        style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, backgroundColor: "#5865F2", marginTop: 8 }}
+                    >
+                        <RNText style={{ color: "#FFFFFF", fontWeight: "600" }}>Refetch</RNText>
+                    </Pressable>
+                </View>
             </View>
         );
     }
 
+    // ROUND 17 (Discord 353): BARE-PAGE SPLIT, mirroring round 16's
+    // Plugins split. Diag-7 proved BrowserPage NEVER renders (no
+    // ADDONBROWSER MOUNTED, CustomPage retries navId 9→11) while the
+    // bare Plugins page mounts in ~40 ms. By elimination (§3 of
+    // ROUND17-DIAGNOSIS), the only @metro components in BrowserPage's
+    // first paint that appear in NO committing page's first paint are
+    // Card and IconButton — so this first paint uses plain RN
+    // primitives ONLY: View + ScrollView + Pressable + RN Text.
+    // Mode buttons → Pressable + Text. Sort IconButton → Pressable +
+    // Text that cycles the sort order (the action sheet is deferred).
+    // Warning Card → plain View + Text. AddonCard → plain View + Text
+    // rows with Install/Uninstall as Pressable + Text. The copy-link
+    // menu is deferred with the cards. Fetch logic unchanged.
+    const cycleSort = () => {
+        const idx = SORT_ORDER.indexOf(sort);
+        setSort(SORT_ORDER[(idx + 1) % SORT_ORDER.length]);
+    };
+
     return (
         <View style={{ flex: 1 }}>
             <View style={{ paddingHorizontal: 10 }}>
-                <Stack spacing={12}>
-                    <View style={{ flexDirection: "row", paddingTop: 10 }}>
-                        <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
-                            <Button
-                                size="md"
-                                text="Plugins"
-                                variant={mode === "plugins" ? "primary" : "secondary"}
-                                onPress={() => setMode("plugins")}
-                                style={{ flex: 1 }}
-                            />
-                            <View style={{ width: 8 }} />
-                            <Button
-                                size="md"
-                                text="Themes"
-                                variant={mode === "themes" ? "primary" : "secondary"}
-                                onPress={() => setMode("themes")}
-                                style={{ flex: 1 }}
-                            />
-                        </View>
-                    </View>
+                <View style={{ flexDirection: "row", paddingTop: 10 }}>
+                    <Pressable
+                        onPress={() => setMode("plugins")}
+                        style={{ flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 8, backgroundColor: mode === "plugins" ? "#5865F2" : "rgba(255,255,255,0.06)" }}
+                    >
+                        <RNText style={{ color: "#FFFFFF", fontWeight: "600" }}>Plugins</RNText>
+                    </Pressable>
+                    <View style={{ width: 8 }} />
+                    <Pressable
+                        onPress={() => setMode("themes")}
+                        style={{ flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 8, backgroundColor: mode === "themes" ? "#5865F2" : "rgba(255,255,255,0.06)" }}
+                    >
+                        <RNText style={{ color: "#FFFFFF", fontWeight: "600" }}>Themes</RNText>
+                    </Pressable>
+                </View>
 
-                    {/* ROUND 15 (Discord 353): the <Search> (TextInput) is
-                        REMOVED. Evidence: the BrowserPage never commits
-                        (its fetch effect never runs) and Search/TextInput
-                        is the component it shares with the Plugins page,
-                        the other no-commit page — while General, the one
-                        page that commits, has no Search. The sort button
-                        stays. Search returns once the page commits
-                        without it. */}
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 6 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <IconButton
-                            size="md"
-                            variant="tertiary"
-                            icon={findAssetId("MoreVerticalIcon")}
-                            disabled={!!searchQuery}
-                            onPress={() => showSimpleActionSheet({
-                                key: "AddonListSortOptions",
-                                header: {
-                                    title: "Sort Options",
-                                    onClose: () => hideActionSheet("AddonListSortOptions"),
-                                },
-                                options: Object.entries(Sort).map(([key, value]) => ({
-                                    label: value,
-                                    onPress: () => {
-                                        setSort(value as Sort);
-                                    }
-                                }))
-                            })}
-                        />
-                    </View>
-
-                    </View>
-                </Stack>
+                <View style={{ flexDirection: "row", alignItems: "center", paddingBottom: 6, paddingTop: 8 }}>
+                    <Pressable
+                        onPress={cycleSort}
+                        style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.06)" }}
+                    >
+                        <RNText style={{ color: "#DBDEE1", fontWeight: "600" }}>Sort: {sort}</RNText>
+                    </Pressable>
+                </View>
             </View>
 
             {/* ROUND 14 (Discord 353): FlashList never commits on 353 for
@@ -500,16 +449,14 @@ export default function BrowserPage() {
             >
                 {mode === "plugins" ? (
                     <View style={{ paddingVertical: 6, paddingHorizontal: 8 }}>
-                        <Card border="strong">
-                            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", flexDirection: "row" }}>
-                                <View style={{ gap: 6, flexShrink: 1 }}>
-                                    <Text variant="heading-md/bold">Unproxied Plugins</Text>
-                                    <Text variant="text-sm/medium" color="text-muted">
-                                        Plugins installed from this source have not been checked for safety, install at your own risk
-                                    </Text>
-                                </View>
+                        <View style={{ padding: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)", borderRadius: 10 }}>
+                            <View style={{ gap: 6 }}>
+                                <RNText style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "700" }}>Unproxied Plugins</RNText>
+                                <RNText style={{ color: "#B5BAC1", fontSize: 14 }}>
+                                    Plugins installed from this source have not been checked for safety, install at your own risk
+                                </RNText>
                             </View>
-                        </Card>
+                        </View>
                     </View>
                 ) : null}
                 {sortedAndFiltered.map((addon: any) => (
